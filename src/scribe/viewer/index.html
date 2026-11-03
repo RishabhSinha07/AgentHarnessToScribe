@@ -1,0 +1,673 @@
+<title>Live Scribbler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
+
+<style>
+  :root {
+    --ground:#F2F3F5; --surface:#FFFFFF; --sunken:#E7E9ED;
+    --ink:#1A1D21; --muted:#697385; --rule:#D5D9E0;
+    --accent:#C63C30; --accent-dim:#F3DEDB;
+    --good:#2E7D5B; --good-dim:#DCEBE3;
+    --paper:#FCFBF7; --pen:#1C1C20;
+    --shadow:0 1px 2px rgba(26,29,33,.06), 0 8px 24px rgba(26,29,33,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#15171A; --surface:#1D2025; --sunken:#24282E;
+      --ink:#E4E6EA; --muted:#949DAD; --rule:#2F343B;
+      --accent:#E8695C; --accent-dim:#3A2220;
+      --good:#5FB68D; --good-dim:#1C2E26;
+      --paper:#F7F6F2; --pen:#1C1C20;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#15171A; --surface:#1D2025; --sunken:#24282E;
+    --ink:#E4E6EA; --muted:#949DAD; --rule:#2F343B;
+    --accent:#E8695C; --accent-dim:#3A2220;
+    --good:#5FB68D; --good-dim:#1C2E26;
+    --paper:#F7F6F2; --pen:#1C1C20;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1080px; margin:0 auto; padding:52px 24px 96px; }
+  h1,h2,h3,.eyebrow,.chip,th,button,.stat-label,.rail-num {
+    font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
+  h1 { font-size:clamp(32px,5vw,46px); font-weight:700; line-height:1.1;
+    letter-spacing:-.02em; margin:0 0 16px; text-wrap:balance; }
+  .standfirst { font-size:20px; color:var(--muted); margin:0; max-width:62ch; text-wrap:pretty; }
+  h2 { font-size:13px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 20px; padding-bottom:10px; border-bottom:1px solid var(--rule); }
+  section { margin-top:60px; }
+  p { margin:0 0 14px; max-width:68ch; } p:last-child { margin-bottom:0; }
+
+  /* ---- player ---- */
+  .stage { margin-top:36px; background:var(--surface); border:1px solid var(--rule);
+    border-radius:12px; box-shadow:var(--shadow); overflow:hidden; }
+  .board { position:relative; background:var(--paper); }
+  canvas { display:block; width:100%; height:auto; }
+
+  .caption { min-height:74px; display:flex; align-items:center; gap:14px;
+    padding:16px 22px; border-top:1px solid var(--rule); background:var(--surface); }
+  .caption-dot { width:8px; height:8px; border-radius:50%; background:var(--accent);
+    flex:none; opacity:0; transition:opacity .25s; }
+  .caption.speaking .caption-dot { opacity:1; }
+  .caption-text { font-size:19px; line-height:1.45; color:var(--ink); text-wrap:pretty; }
+  .caption-text.idle { color:var(--muted); font-style:italic; }
+
+  .controls { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:14px 22px; border-top:1px solid var(--rule); background:var(--sunken); }
+  button { font-size:13px; font-weight:600; letter-spacing:.03em; cursor:pointer;
+    padding:8px 16px; border-radius:7px; border:1px solid var(--rule);
+    background:var(--surface); color:var(--ink); transition:background .15s,border-color .15s; }
+  button:hover { border-color:var(--muted); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { filter:brightness(1.08); }
+  .scrub { flex:1 1 220px; min-width:160px; accent-color:var(--accent); cursor:pointer; }
+  .clock { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:12.5px;
+    color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .speed { display:flex; gap:5px; }
+  .speed button { padding:6px 11px; font-size:12px; }
+  .speed button[aria-pressed="true"] { background:var(--accent-dim); border-color:var(--accent);
+    color:var(--accent); }
+  .voice-btn[aria-pressed="true"] { background:var(--good-dim); border-color:var(--good); color:var(--good); }
+  .voice-btn[hidden] { display:none; }
+  .caption-dot.gesture { background:var(--good); }
+
+  .oplog { max-height:150px; overflow-y:auto; padding:12px 22px 16px;
+    border-top:1px solid var(--rule); background:var(--surface);
+    font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:12px; line-height:1.85; }
+  .oplog div { color:var(--muted); }
+  .oplog div.done { color:var(--ink); }
+  .oplog div.now { color:var(--accent); font-weight:500; }
+
+  /* ---- findings ---- */
+  .verdict { display:grid; gap:20px; grid-template-columns:1fr; background:var(--surface);
+    border:1px solid var(--rule); border-radius:10px; padding:26px 28px;
+    box-shadow:var(--shadow); margin-top:36px; }
+  @media (min-width:720px){ .verdict { grid-template-columns:180px 1fr; gap:32px; } }
+  .verdict-label { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding-top:5px; }
+  .verdict p { font-size:18px; }
+  .tablewrap { overflow-x:auto; border:1px solid var(--rule); border-radius:9px;
+    background:var(--surface); box-shadow:var(--shadow); }
+  table { border-collapse:collapse; width:100%; min-width:660px; }
+  th { text-align:left; font-size:11.5px; font-weight:600; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted); padding:14px 18px;
+    border-bottom:1px solid var(--rule); white-space:nowrap; }
+  td { padding:15px 18px; border-bottom:1px solid var(--rule); font-size:15.5px; vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  td:first-child { font-weight:600; }
+  .chip { display:inline-block; font-size:11px; font-weight:600; letter-spacing:.07em;
+    text-transform:uppercase; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .chip-blocker { background:var(--accent-dim); color:var(--accent); }
+  .chip-gap { background:var(--sunken); color:var(--muted); }
+  .chip-works { background:var(--good-dim); color:var(--good); }
+  code { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:.88em;
+    background:var(--sunken); padding:1px 5px; border-radius:4px; }
+  .caveat { margin-top:28px; padding:20px 24px; border-radius:9px; background:var(--surface);
+    border:1px solid var(--rule); border-left:3px solid var(--accent); }
+  .caveat p { font-size:16px; color:var(--muted); }
+  .caveat strong { color:var(--ink); font-weight:600; }
+  footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--rule);
+    font-family:Archivo,sans-serif; font-size:13px; color:var(--muted); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
+
+  .wrap { padding:24px; }
+  .topline { display:flex; align-items:center; justify-content:space-between;
+    gap:16px; margin-bottom:14px; flex-wrap:wrap; }
+  .status { display:inline-flex; align-items:center; gap:8px;
+    font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  .status-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .status.on .status-dot { background:var(--good); }
+  .status.off .status-dot { background:var(--accent); }
+  #follow[aria-pressed="true"] { background:var(--good-dim); border-color:var(--good); color:var(--good); }
+</style>
+
+<div class="wrap">
+  <div class="topline">
+    <span class="eyebrow" id="topic">No lesson open</span>
+    <span class="status" id="status"><span class="status-dot"></span><span id="statusText">connecting</span></span>
+  </div>
+
+  <div class="stage">
+    <div class="board"><canvas id="board" width="1040" height="780"></canvas></div>
+    <div class="caption" id="caption">
+      <span class="caption-dot"></span>
+      <span class="caption-text idle" id="captionText">Waiting for the first stroke.</span>
+    </div>
+    <div class="controls">
+      <button class="primary" id="play">Pause</button>
+      <button id="restart">Replay</button>
+      <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" aria-label="Scrub through the lesson">
+      <span class="clock" id="clock">0:00 / 0:00</span>
+      <button id="follow" aria-pressed="true">Following</button>
+      <button id="voice" aria-pressed="true" class="voice-btn">Voice on</button>
+      <span class="speed">
+        <button data-speed="0.5">0.5&times;</button>
+        <button data-speed="1" aria-pressed="true">1&times;</button>
+        <button data-speed="2">2&times;</button>
+        <button data-speed="4">4&times;</button>
+      </span>
+    </div>
+    <div class="oplog" id="oplog"></div>
+  </div>
+</div>
+<script>
+(() => {
+  "use strict";
+
+  const GRID_W = 40, GRID_H = 30, CELL = 26;
+  const PAPER = "#FCFBF7", PEN = "#1C1C20", ACCENT = "#C63C30";
+  const PENS = { ink:PEN, red:ACCENT, blue:"#2A56A8", green:"#2E7D5B",
+                 grey:"#808895", gray:"#808895" };
+  const CHAR_W = 0.52, LINE_H = 1.05;   // grid units, matching canvas.py
+  let pen = PEN;                         // current pen, reset each render pass
+
+  const cv = document.getElementById("board");
+  const ctx = cv.getContext("2d");
+
+  // Back the canvas at device resolution so strokes and handwriting stay crisp,
+  // while every draw call below keeps working in logical 1040x780 space.
+  const W = GRID_W * CELL, H = GRID_H * CELL;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = W * dpr; cv.height = H * dpr;
+
+  // --- deterministic jitter -------------------------------------------------
+  // Seeded per (op, call) so a line lands identically on every redraw and the
+  // drawing doesn't shimmer while it animates.
+  let seedBase = 0, seedTick = 0;
+  function seedFor(op) { seedBase = op * 7919; seedTick = 0; }
+  function rnd() {
+    let n = (seedBase + (seedTick++) * 2654435761) | 0;
+    n = Math.imul(n ^ 61, 0x27d4eb2d); n ^= n >>> 15;
+    return ((n >>> 0) / 4294967296) * 2 - 1;
+  }
+  const px = (x, y) => [x * CELL, y * CELL];
+  const jit = ([x, y], a = 1.6) => [x + rnd() * a, y + rnd() * a];
+
+  function roughLine(a, b, width = 3, color = null, t = 1) {
+    color = color || pen;
+    if (t <= 0) return;
+    const e = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = "round";
+    for (let p = 0; p < 2; p++) {
+      const ja = jit(a), je = jit(e);
+      ctx.beginPath(); ctx.moveTo(ja[0], ja[1]); ctx.lineTo(je[0], je[1]); ctx.stroke();
+    }
+  }
+
+  // Walk a polyline, consuming progress t across its total length.
+  function polyline(pts, t, width = 3, color = null) {
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = px(...pts[i]), b = px(...pts[i + 1]);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      segs.push([a, b, len]); total += len;
+    }
+    let want = total * t;
+    for (const [a, b, len] of segs) {
+      if (want <= 0) break;
+      roughLine(a, b, width, color, Math.min(1, want / len));
+      want -= len;
+    }
+  }
+
+  function drawText(x, y, s, size, center, t) {
+    const n = Math.max(0, Math.round(s.length * t));
+    if (!n) return;
+    ctx.fillStyle = pen;
+    ctx.font = `600 ${size}px Caveat, "Bradley Hand", cursive`;
+    ctx.textAlign = center ? "center" : "left";
+    ctx.textBaseline = "middle";
+    const [cx, cy] = px(x, y);
+    ctx.fillText(s.slice(0, n), cx, cy);
+  }
+
+  function arrowHead(a, b, t) {
+    if (t < 1) return;
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    for (const sign of [1, -1]) {
+      roughLine(b, [b[0] - 14 * Math.cos(ang + sign * 0.45),
+                    b[1] - 14 * Math.sin(ang + sign * 0.45)], 2, pen, 1);
+    }
+  }
+
+  // --- solid boxes placed so far this pass, for dodging labels --------------
+  let solids = [];
+  const textBox = (x, y, s, size, center) => {
+    const w = s.length * CHAR_W * (size / 20), h = LINE_H * (size / 20);
+    const x0 = center ? x - w / 2 : x;
+    return [x0, y - h / 2, x0 + w, y + h / 2];
+  };
+  const hits = (a, b, pad = 0) =>
+    !(a[2] + pad <= b[0] || b[2] + pad <= a[0] || a[3] + pad <= b[1] || b[3] + pad <= a[1]);
+
+  // Converging arrows share a midpoint, so midpoint labels stack. Step
+  // perpendicular until the slot is free; give up rather than wander far.
+  function dodgeLabel(x, y, s, size) {
+    for (const step of [0, -1.2, 1.2, -2.4, 2.4, -3.6, 3.6]) {
+      const cand = textBox(x, y + step, s, size, true);
+      if (!solids.some(o => hits(cand, o, 0.1))) return y + step;
+    }
+    return y;
+  }
+
+  // --- op parsing (mirrors canvas.py: accepts "3,4" or "3 4") ---------------
+  function tokenize(line) {
+    const out = []; const re = /"([^"]*)"|(\S+)/g; let m;
+    while ((m = re.exec(line))) out.push(m[1] !== undefined ? m[1] : m[2]);
+    return out;
+  }
+  function parse(src) {
+    const ops = [];
+    for (const raw of src.split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const parts = tokenize(line);
+      const cmd = parts[0].toLowerCase(), args = parts.slice(1);
+      const take = (n) => {
+        const vals = []; let used = 0;
+        for (const tok of args) {
+          if (vals.length >= n) break;
+          used++;
+          for (const piece of String(tok).split(",")) {
+            const p = piece.trim(); if (p) vals.push(parseFloat(p));
+          }
+        }
+        return [vals.slice(0, n), used];
+      };
+      const label = (used) => args.slice(used).join(" ").trim();
+
+      if (cmd === "stroke") {
+        const pts = args.filter(a => String(a).includes(","))
+                        .map(a => String(a).split(",").map(Number));
+        if (pts.length >= 2) ops.push({ cmd, pts, raw: line });
+      } else if (cmd === "box") {
+        const [[x, y, w, h], u] = take(4); ops.push({ cmd, x, y, w, h, label: label(u), raw: line });
+      } else if (cmd === "arrow") {
+        const [[x1, y1, x2, y2], u] = take(4);
+        ops.push({ cmd, x1, y1, x2, y2, label: label(u), raw: line });
+      } else if (cmd === "text") {
+        const [[x, y], u] = take(2); ops.push({ cmd, x, y, s: label(u), raw: line });
+      } else if (cmd === "ellipse") {
+        const [[x, y, rx, ry], u] = take(4);
+        ops.push({ cmd, x, y, rx, ry, label: label(u), raw: line });
+      } else if (cmd === "circle") {
+        const [[x, y, r], u] = take(3); ops.push({ cmd, x, y, r, note: label(u), raw: line });
+      } else if (cmd === "erase") {
+        // Three numbers is a square radius; four is a rectangle.
+        const [four, u4] = take(4);
+        if (four.length === 4 && !Number.isNaN(four[3])) {
+          const [x, y, w, h] = four;
+          ops.push({ cmd, x0:x, y0:y, x1:x+w, y1:y+h, note: label(u4), raw: line });
+        } else {
+          const [[x, y, r], u] = take(3);
+          ops.push({ cmd, x0:x-r, y0:y-r, x1:x+r, y1:y+r, note: label(u), raw: line });
+        }
+      } else if (cmd === "pen") {
+        ops.push({ cmd, name: (args[0] || "ink").toLowerCase(), raw: line });
+      } else if (cmd === "page") {
+        ops.push({ cmd, title: label(0), raw: line });
+      } else if (cmd === "say") {
+        ops.push({ cmd, s: label(0), raw: line });
+      }
+    }
+    return ops;
+  }
+
+  // --- timing ---------------------------------------------------------------
+  // Draw ops take about as long as the hand would; `say` paces to reading speed.
+  // Roughly how long a voice takes to read n characters at rate 1.
+  const spoken = (n) => 500 + n * 62;
+
+  function duration(op) {
+    switch (op.cmd) {
+      case "box":    return 700;
+      case "arrow":  return 520;
+      case "text":   return Math.max(320, op.s.length * 42);
+      case "stroke": return Math.max(260, (op.pts.length - 1) * 170);
+      case "say":    return spoken(op.s.length);
+      // A gesture carrying a note has to stay on screen long enough to say it,
+      // or the next line cuts the voice off mid-sentence.
+      case "ellipse":return 780;
+      case "pen":    return 1;      // state change, effectively instant
+      case "page":   return 900;
+      case "circle": return op.note ? Math.max(780, spoken(op.note.length)) : 780;
+      case "erase":  return op.note ? Math.max(430, spoken(op.note.length)) : 430;
+      default:       return 200;
+    }
+  }
+
+  // Live: the op list starts empty and grows as the agent draws.
+  const ops = [];
+  const starts = [];
+  let total = 0;
+
+  function appendOps(src) {
+    const fresh = parse(src);
+    for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
+    if (fresh.length) { renderLog(); if (following) setPlaying(true); }
+    return fresh.length;
+  }
+
+  // --- render ---------------------------------------------------------------
+  function renderAt(time) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
+    pen = PEN;        // pen state is rebuilt from the op stream each pass
+    solids = [];
+
+    let speaking = null;   // { text, idx, gesture }
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i], d = duration(op);
+      const t = Math.max(0, Math.min(1, (time - starts[i]) / d));
+      if (t <= 0) break;
+      seedFor(i);
+
+      switch (op.cmd) {
+        case "box": {
+          const { x, y, w, h } = op;
+          polyline([[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]], t);
+          solids.push([x, y, x + w, y + h]);
+          if (op.label && t > 0.75) drawText(x + w/2, y + h/2, op.label, 20, true, (t-0.75)/0.25);
+          break;
+        }
+        case "arrow": {
+          const a = px(op.x1, op.y1), b = px(op.x2, op.y2);
+          roughLine(a, b, 3, PEN, t); arrowHead(a, b, t);
+          if (op.label && t > 0.7) {
+            const lx = (op.x1 + op.x2) / 2;
+            const ly = dodgeLabel(lx, (op.y1 + op.y2) / 2 - 0.7, op.label, 18);
+            drawText(lx, ly, op.label, 18, true, (t - 0.7) / 0.3);
+          }
+          break;
+        }
+        case "text":
+          drawText(op.x, op.y, op.s, 20, false, t);
+          solids.push(textBox(op.x, op.y, op.s, 20, false));
+          break;
+        case "pen": pen = PENS[op.name] || PEN; break;
+        case "page":
+          // Wipe to a clean page, then drop any solids from the old one.
+          ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
+          solids = [];
+          if (op.title) drawText(1.5, 1.5, op.title, 20, false, t);
+          break;
+        case "ellipse": {
+          const pts = [];
+          for (let k = 0; k <= 16; k++) {
+            const th = k * Math.PI / 8;
+            pts.push([op.x + op.rx * Math.cos(th), op.y + op.ry * Math.sin(th)]);
+          }
+          polyline(pts, t);
+          solids.push([op.x - op.rx, op.y - op.ry, op.x + op.rx, op.y + op.ry]);
+          if (op.label && t > 0.75) drawText(op.x, op.y, op.label, 20, true, (t - 0.75) / 0.25);
+          break;
+        }
+        case "stroke": polyline(op.pts, t); break;
+        case "circle": {
+          const pts = [];
+          for (let k = 0; k <= 16; k++) {
+            const th = k * Math.PI / 8;
+            pts.push([op.x + op.r * Math.cos(th) * 1.12, op.y + op.r * Math.sin(th) * 0.9]);
+          }
+          polyline(pts, t, 3, ACCENT);
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
+        case "erase": {
+          // Wipe left-to-right so the erasure itself is visible.
+          const [x0, y0] = px(op.x0, op.y0);
+          const [x1, y1] = px(op.x1, op.y1);
+          ctx.fillStyle = PAPER;
+          ctx.fillRect(x0, y0, (x1 - x0) * t, y1 - y0);
+          if (t < 1) {
+            ctx.fillStyle = "rgba(120,130,145,.18)";
+            ctx.fillRect(x0 + (x1 - x0) * t - 16, y0, 16, y1 - y0);
+          }
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
+        case "say": if (t < 1) speaking = { text: op.s, idx: i, gesture: false }; break;
+      }
+    }
+    return speaking;
+  }
+
+  // --- last spoken line, for when playback sits between `say` ops -----------
+  function lastSaid(time) {
+    let said = null;
+    for (let i = 0; i < ops.length; i++) {
+      if (starts[i] > time) break;
+      const o = ops[i];
+      if (o.cmd === "say") said = o.s;
+      else if (o.note) said = o.note;
+    }
+    return said;
+  }
+
+  // --- op log ---------------------------------------------------------------
+  const logEl = document.getElementById("oplog");
+  let logRows = [];
+  let lastActive = -1;
+
+  function renderLog() {
+    logEl.innerHTML = ops.map(o =>
+      `<div>${o.raw.replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;")}</div>`).join("");
+    logRows = Array.from(logEl.children);
+    lastActive = -1;
+  }
+
+  function syncLog(time) {
+    let active = -1;
+    for (let i = 0; i < ops.length; i++) if (starts[i] <= time) active = i;
+    if (active === lastActive) return;
+    logRows.forEach((row, i) => {
+      row.className = i < active ? "done" : i === active ? "now" : "";
+    });
+    if (active >= 0 && logRows[active]) {
+      const row = logRows[active];
+      const top = row.offsetTop - logEl.clientHeight / 2 + row.clientHeight / 2;
+      logEl.scrollTo({ top, behavior: Math.abs(active - lastActive) > 3 ? "auto" : "smooth" });
+    }
+    lastActive = active;
+  }
+
+  // --- voice ----------------------------------------------------------------
+  // Web Speech API: no network, no key, and nothing for the artifact CSP to
+  // block. Each line is spoken once, keyed by its op index.
+  const speech = {
+    supported: typeof window !== "undefined" && "speechSynthesis" in window,
+    enabled: true,
+    voice: null,
+    spokenIdx: -1,
+
+    pickVoice() {
+      if (!this.supported) return;
+      const all = window.speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+      if (!all.length) return;
+      // Prefer the natural-sounding system voices where they exist.
+      const prefer = ["Samantha", "Serena", "Karen", "Daniel", "Moira",
+                      "Google UK English Female", "Google US English", "Microsoft Aria"];
+      for (const name of prefer) {
+        const hit = all.find(v => v.name.includes(name));
+        if (hit) { this.voice = hit; return; }
+      }
+      this.voice = all.find(v => v.localService) || all[0];
+    },
+
+    say(text, idx, rate) {
+      if (!this.supported || !this.enabled) return;
+      if (idx === this.spokenIdx) return;      // already speaking this line
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      if (this.voice) u.voice = this.voice;
+      // Clamp: above ~3 the synth garbles, and 4x playback would ask for more.
+      u.rate = Math.max(0.5, Math.min(3, rate));
+      u.pitch = 1;
+      window.speechSynthesis.speak(u);
+      this.spokenIdx = idx;
+    },
+
+    stop() {
+      if (this.supported) window.speechSynthesis.cancel();
+      this.spokenIdx = -1;
+    },
+  };
+
+  if (speech.supported) {
+    speech.pickVoice();
+    window.speechSynthesis.addEventListener?.("voiceschanged", () => speech.pickVoice());
+  }
+
+  // --- transport ------------------------------------------------------------
+  const playBtn = document.getElementById("play");
+  const restartBtn = document.getElementById("restart");
+  const scrub = document.getElementById("scrub");
+  const clock = document.getElementById("clock");
+  const capEl = document.getElementById("caption");
+  const capText = document.getElementById("captionText");
+
+  let time = 0, playing = false, speed = 1, last = 0;
+  let following = true;
+
+  const fmt = (ms) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  function paint() {
+    const speaking = renderAt(time);
+    const line = speaking ? speaking.text : lastSaid(time);
+    capEl.classList.toggle("speaking", !!speaking);
+    capEl.querySelector(".caption-dot").classList.toggle("gesture", !!speaking?.gesture);
+
+    // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
+    if (speaking && playing) speech.say(speaking.text, speaking.idx, speed);
+
+    if (line) { capText.textContent = line; capText.classList.remove("idle"); }
+    else { capText.textContent = "Press play to watch and hear the lesson draw itself."; capText.classList.add("idle"); }
+    clock.textContent = `${fmt(time)} / ${fmt(total)}`;
+    scrub.value = String(total ? Math.round((time / total) * 1000) : 0);
+    syncLog(time);
+  }
+
+  function frame(now) {
+    if (!playing) return;
+    const dt = Math.min(100, now - last); last = now;
+    time += dt * speed;
+    // At the live head we idle rather than stop -- more ops may still arrive.
+    if (time >= total) { time = total; playing = false; playBtn.textContent = "Play"; speech.stop(); }
+    paint();
+    if (playing) requestAnimationFrame(frame);
+  }
+
+  function setPlaying(on) {
+    playing = on;
+    playBtn.textContent = on ? "Pause" : "Play";
+    if (!on) speech.stop();
+    if (on) {
+      if (time >= total) time = 0;
+      last = performance.now();
+      requestAnimationFrame(frame);
+    }
+  }
+
+  playBtn.addEventListener("click", () => setPlaying(!playing));
+  restartBtn.addEventListener("click", () => { time = 0; speech.stop(); setFollowing(false); paint(); setPlaying(true); });
+  scrub.addEventListener("input", () => {
+    time = (Number(scrub.value) / 1000) * total;
+    speech.stop();   // jumping mid-sentence should cut the voice, not trail it
+    setFollowing(false);   // scrubbing back means you want to look, not keep up
+    paint();
+  });
+
+  const followBtn = document.getElementById("follow");
+  function setFollowing(on) {
+    following = on;
+    followBtn.setAttribute("aria-pressed", String(on));
+    followBtn.textContent = on ? "Following" : "Follow";
+    if (on) { time = total; paint(); }
+  }
+  followBtn.addEventListener("click", () => setFollowing(!following));
+  document.querySelectorAll(".speed button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      speed = Number(btn.dataset.speed);
+      document.querySelectorAll(".speed button").forEach(b =>
+        b.setAttribute("aria-pressed", String(b === btn)));
+      speech.stop();   // re-speaks the current line at the new rate
+      paint();
+    });
+  });
+
+  const voiceBtn = document.getElementById("voice");
+  if (!speech.supported) {
+    voiceBtn.hidden = true;   // no synth in this browser; captions still carry the lesson
+  } else {
+    voiceBtn.addEventListener("click", () => {
+      speech.enabled = !speech.enabled;
+      voiceBtn.setAttribute("aria-pressed", String(speech.enabled));
+      voiceBtn.textContent = speech.enabled ? "Voice on" : "Voice off";
+      if (!speech.enabled) speech.stop();
+      else paint();
+    });
+  }
+
+  // --- live feed ------------------------------------------------------------
+  const statusEl = document.getElementById("status");
+  const statusText = document.getElementById("statusText");
+  const topicEl = document.getElementById("topic");
+
+  function setStatus(state, text) {
+    statusEl.classList.toggle("on", state === "on");
+    statusEl.classList.toggle("off", state === "off");
+    statusText.textContent = text;
+  }
+
+  function connect() {
+    const sid = new URLSearchParams(location.search).get("s") || "";
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${proto}//${location.host}/ws?s=${encodeURIComponent(sid)}`);
+
+    ws.addEventListener("open", () => setStatus("on", "live"));
+    ws.addEventListener("message", (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "hello") {
+        topicEl.textContent = msg.topic || "Untitled lesson";
+        if (msg.ops) appendOps(msg.ops);
+      } else if (msg.type === "ops") {
+        appendOps(msg.ops);
+      } else if (msg.type === "closed") {
+        setStatus("off", "lesson ended");
+      }
+    });
+    ws.addEventListener("close", () => {
+      setStatus("off", "disconnected");
+      // The agent may simply be between scenes; keep trying.
+      setTimeout(connect, 2000);
+    });
+    ws.addEventListener("error", () => setStatus("off", "error"));
+  }
+
+  // Canvas text needs the handwriting face loaded, or the first paint
+  // silently falls back and every glyph shifts once it arrives.
+  function boot() { paint(); connect(); }
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load('600 20px Caveat'), document.fonts.ready])
+      .then(boot).catch(boot);
+  } else { boot(); }
+})();
+</script>

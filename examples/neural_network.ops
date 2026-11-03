@@ -1,0 +1,100 @@
+text 11,1.5 "How a neural network learns"
+say "Let's start with the shape of the thing. It's just layers of small units."
+
+text 4.5,4.5 "Input"
+box 5,7 3,2.5 "x1"
+box 5,12 3,2.5 "x2"
+box 5,17 3,2.5 "x3"
+say "On the left, your inputs. Three numbers describing one example."
+
+text 16.5,2.5 "Hidden"
+box 17,5 3,2.5 "h1"
+box 17,10 3,2.5 "h2"
+box 17,15 3,2.5 "h3"
+box 17,20 3,2.5 "h4"
+say "In the middle, a hidden layer. These are the units that learn features."
+
+text 28.5,9.5 "Output"
+box 29,12 3.5,2.5 "y"
+say "On the right, one output. The prediction."
+
+stroke 8,8.25 17,6.25
+stroke 8,8.25 17,11.25
+stroke 8,8.25 17,16.25
+stroke 8,8.25 17,21.25
+stroke 8,13.25 17,6.25
+stroke 8,13.25 17,11.25
+stroke 8,13.25 17,16.25
+stroke 8,13.25 17,21.25
+stroke 8,18.25 17,6.25
+stroke 8,18.25 17,11.25
+stroke 8,18.25 17,16.25
+stroke 8,18.25 17,21.25
+say "Every input connects to every hidden unit. That's the mesh."
+
+stroke 20,6.25 29,13.25
+stroke 20,11.25 29,13.25
+stroke 20,16.25 29,13.25
+stroke 20,21.25 29,13.25
+say "And every hidden unit feeds the output."
+# --- correction: "Hidden" ran into the title. Clear the band and rewrite both.
+erase 18,2.2 3 "Rubbing out that label -- it was crowding the title."
+text 11,1.5 "How a neural network learns"
+text 17,3.8 "Hidden"
+
+# --- focus: pick one unit to open up
+circle 18.5,11.25 3 "Circling h2 here -- this is the one we'll open up."
+say "Every one of these units does the same small job. Let's open up h2."
+# --- repair: that erase clipped the top off h1. Redraw it.
+box 17,5 3,2.5 "h1"
+say "Oops, I rubbed out the top of h1 there. Putting it back."
+
+# --- the zoom: what one unit actually does
+text 1.5,23.3 "Inside h2: multiply, add, squash"
+say "Here is the whole job of a single unit. Three steps, that's all."
+
+text 3.5,25.2 "x1"
+text 3.5,26.6 "x2"
+text 3.5,28 "x3"
+arrow 5.5,25.2 12.6,26 "w1"
+arrow 5.5,26.6 12.6,26.5 "w2"
+arrow 5.5,28 12.6,27 "w3"
+say "Each incoming number is multiplied by a weight. The weights are what the network learns."
+
+box 13,25 4.5,3 "sum"
+say "Add all three products together."
+
+arrow 17.5,26.5 21,26.5
+box 21,25 5.5,3 "ReLU"
+say "Then squash the result. ReLU just means: if it's negative, make it zero."
+
+arrow 26.5,26.5 31,26.5
+text 31.5,26.5 "h2"
+say "And that number is what h2 passes forward."
+# tie the prediction to the output box before we clear anything
+arrow 32.6,13.25 33.6,13.25
+text 34,11.5 "guess"
+text 34,13.25 "0.7"
+text 34,15 "truth"
+text 34,16.7 "1.0"
+say "Say the network guesses 0.7, but the right answer was 1.0."
+
+# --- wipe the zoom. One rectangle now that erase takes w,h.
+erase 0,22.8 40,8 "Wiping the close-up now -- we need the room."
+say "We're done with the close-up, so let me wipe it and use the space."
+
+text 1.5,24.3 "Learning: compare, then push the error backwards"
+box 2,26 5,2.8 "guess 0.7"
+arrow 7,27.4 9.5,27.4
+box 9.5,26 5,2.8 "true 1.0"
+arrow 14.5,27.4 17,27.4
+box 17,26 6,2.8 "error 0.3"
+say "Subtract them. That gap, 0.3, is the error."
+
+arrow 23,27.4 25.5,27.4
+box 25.5,26 9,2.8 "nudge the weights"
+say "Now every weight that pushed the guess too low gets nudged up a little."
+
+arrow 28,25.8 21,23.2 "backwards"
+say "That nudge travels back through the network, layer by layer. That's backpropagation."
+say "Do this a few thousand times and the weights stop being random. That's training."
