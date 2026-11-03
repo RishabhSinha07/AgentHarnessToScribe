@@ -64,6 +64,13 @@ rather than going silent.
 | `ELEVENLABS_VOICE_ID` | Sarah | Starting voice; switch live in the picker |
 | `ELEVENLABS_MODEL` | `eleven_turbo_v2_5` | Turbo keeps the voice up with the drawing |
 
+A `.env` beside the project works too, and is gitignored — see `.env.example`.
+
+**Narration drives the timeline.** Character count is a poor predictor of how
+long a sentence takes to say, so the viewer loads each line's audio ahead of
+time and uses its real duration. Without that, roughly one line in six gets
+clipped before it finishes.
+
 ### As an MCP server
 
 ```bash

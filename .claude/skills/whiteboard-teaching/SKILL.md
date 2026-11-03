@@ -39,8 +39,10 @@ highlight "h1" "Circling this one — it's where the work happens."
   For anything with a label, use `highlight` — you cannot see how wide a box
   rendered, and a guessed ring either slices through the text or swallows the
   neighbours. The report will tell you when you have done this.
-- **Narrate in speech, not prose.** `say` lines are read out. Write how you
-  would talk, not how you would write.
+- **Narrate in speech, not prose.** `say` lines are read out loud — by the
+  browser, or by ElevenLabs if the server has a key. Write how you would talk,
+  not how you would write. Long sentences stall the drawing while the voice
+  catches up; two short lines beat one long one.
 - **Let the shape carry the idea.** Branching, ordering, nesting, feedback. A
   row of boxes labelled "Step 1 / Step 2" teaches nothing.
 

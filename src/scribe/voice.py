@@ -12,8 +12,15 @@ from __future__ import annotations
 import hashlib
 import os
 from collections import OrderedDict
+from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
+
+# A .env beside the project is the easy way to hold the key. It is gitignored;
+# override=False means a real environment variable always wins.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+load_dotenv(override=False)
 
 API = "https://api.elevenlabs.io/v1"
 
@@ -23,6 +30,26 @@ DEFAULT_MODEL = "eleven_turbo_v2_5"
 DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # Sarah -- clear, unhurried, good for teaching
 
 _CACHE_LIMIT = 256
+
+
+def _raise_for_status(resp: httpx.Response) -> None:
+    """Raise with what ElevenLabs actually said, not just the status code.
+
+    Their errors are genuinely useful -- a bare "400 Bad Request" hides
+    messages like "API key ID used as API key", which names the exact fix.
+    """
+    if resp.status_code < 400:
+        return
+    detail = ""
+    try:
+        body = resp.json().get("detail", {})
+        if isinstance(body, dict):
+            detail = body.get("message") or body.get("status") or ""
+        elif isinstance(body, str):
+            detail = body
+    except Exception:  # noqa: BLE001 - fall back to the raw text
+        detail = resp.text[:300]
+    raise RuntimeError(f"ElevenLabs {resp.status_code}: {detail or resp.text[:200] or 'no detail'}")
 
 
 class Voice:
@@ -60,7 +87,7 @@ class Voice:
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{API}/voices", headers={"xi-api-key": self.api_key})
-            resp.raise_for_status()
+            _raise_for_status(resp)
             data = resp.json()
 
         self._voices = [
@@ -95,7 +122,7 @@ class Voice:
                     "voice_settings": {"stability": 0.4, "similarity_boost": 0.75},
                 },
             )
-            resp.raise_for_status()
+            _raise_for_status(resp)
             audio = resp.content
 
         self._cache[key] = audio

@@ -352,8 +352,15 @@
 
   // --- timing ---------------------------------------------------------------
   // Draw ops take about as long as the hand would; `say` paces to reading speed.
-  // Roughly how long a voice takes to read n characters at rate 1.
-  const spoken = (n) => 500 + n * 62;
+  // Estimate, used for browser speech and before real audio has loaded.
+  // Measured against ElevenLabs, characters alone under-predict: punctuation
+  // and word shape matter, and the worst case ran ~71ms/char.
+  const estimate = (n) => 550 + n * 70;
+
+  /** How long to hold a spoken line: its real audio duration when we know it. */
+  function spokenOp(op, text) {
+    return op.audioMs ? op.audioMs + 260 : estimate(text.length);
+  }
 
   function duration(op) {
     switch (op.cmd) {
@@ -361,15 +368,15 @@
       case "arrow":  return 520;
       case "text":   return Math.max(320, op.s.length * 42);
       case "stroke": return Math.max(260, (op.pts.length - 1) * 170);
-      case "say":    return spoken(op.s.length);
+      case "say":    return spokenOp(op, op.s);
       // A gesture carrying a note has to stay on screen long enough to say it,
       // or the next line cuts the voice off mid-sentence.
-      case "highlight": return op.note ? Math.max(820, spoken(op.note.length)) : 820;
+      case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
       case "page":   return 900;
-      case "circle": return op.note ? Math.max(780, spoken(op.note.length)) : 780;
-      case "erase":  return op.note ? Math.max(430, spoken(op.note.length)) : 430;
+      case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
+      case "erase":  return op.note ? Math.max(430, spokenOp(op, op.note)) : 430;
       default:       return 200;
     }
   }
@@ -384,6 +391,14 @@
     for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
     if (fresh.length) { renderLog(); if (following) setPlaying(true); }
     return fresh.length;
+  }
+
+  /** Rebuild start times, e.g. once a line's real audio duration is known. */
+  function recomputeTimeline() {
+    const atHead = time >= total - 1;
+    total = 0;
+    for (let i = 0; i < ops.length; i++) { starts[i] = total; total += duration(ops[i]); }
+    if (atHead) time = total;
   }
 
   // --- render ---------------------------------------------------------------
@@ -496,8 +511,8 @@
   function nextSpoken(idx) {
     for (let i = idx + 1; i < ops.length; i++) {
       const o = ops[i];
-      if (o.cmd === "say") return o.s;
-      if (o.note) return o.note;
+      if (o.cmd === "say") return { text: o.s, op: o };
+      if (o.note) return { text: o.note, op: o };
     }
     return null;
   }
@@ -569,12 +584,12 @@
     audio: null,
     cache: new Map(),
 
-    say(text, idx, rate) {
+    say(text, idx, rate, op) {
       if (!this.enabled) return;
       if (idx === this.spokenIdx) return;      // already speaking this line
       this.spokenIdx = idx;
       if (this.engine === "browser") this._browser(text, rate);
-      else this._remote(text, rate);
+      else this._remote(text, rate, op);
     },
 
     _browser(text, rate) {
@@ -592,21 +607,41 @@
       return `/tts?voice=${encodeURIComponent(this.engine)}&text=${encodeURIComponent(text)}`;
     },
 
-    _remote(text, rate) {
+    _remote(text, rate, op) {
       this._stopAudio();
       const el = new Audio(this.url(text));
       el.playbackRate = Math.max(0.5, Math.min(3, rate));
+      el.addEventListener("loadedmetadata", () => {
+        if (op && Number.isFinite(el.duration) && el.duration > 0 && !op.audioMs) {
+          op.audioMs = el.duration * 1000;
+          recomputeTimeline();
+        }
+      });
       // A failed fetch should not leave the lesson silent.
       el.addEventListener("error", () => this._browser(text, rate));
       el.play().catch(() => this._browser(text, rate));
       this.audio = el;
     },
 
-    /** Warm the cache for the next line, so the voice is not late. */
-    prefetch(text) {
+    /** Warm the next line and learn how long it actually runs.
+
+     *  Character count under-predicts speech duration, so an estimated
+     *  timeline clips the end of some lines. Loading the audio ahead of time
+     *  gives us the real figure before playback reaches it.
+     */
+    prefetch(text, op) {
       if (this.engine === "browser" || !text || this.cache.has(text)) return;
       this.cache.set(text, true);
-      fetch(this.url(text)).catch(() => {});
+      const probe = new Audio(this.url(text));
+      probe.preload = "auto";
+      probe.addEventListener("loadedmetadata", () => {
+        if (op && Number.isFinite(probe.duration) && probe.duration > 0) {
+          op.audioMs = probe.duration * 1000;
+          recomputeTimeline();
+        }
+      });
+      probe.addEventListener("error", () => this.cache.delete(text));
+      probe.load();
     },
 
     _stopAudio() {
@@ -649,8 +684,9 @@
     const speaking = renderAt(time);
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
     if (speaking && playing) {
-      speech.say(speaking.text, speaking.idx, speed);
-      speech.prefetch(nextSpoken(speaking.idx));
+      speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);
+      const next = nextSpoken(speaking.idx);
+      if (next) speech.prefetch(next.text, next.op);
     }
 
     // The subtitle shows only while a line is actually being spoken.
@@ -734,6 +770,8 @@
     speech.stop();
     speech.cache.clear();
     speech.engine = picker.value;
+    for (const op of ops) delete op.audioMs;   // a new voice has new timings
+    recomputeTimeline();
     paint();
   });
 

@@ -108,3 +108,24 @@ def test_upstream_failure_is_a_502_not_a_crash(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "__init__", _fake_transport(handler))
     assert TestClient(app).get("/tts?text=hello").status_code == 502
+
+
+def test_upstream_message_is_surfaced_not_just_the_status(monkeypatch):
+    """A bare '400 Bad Request' hid the one thing that named the fix."""
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "an-api-key-id-not-a-key")
+
+    def handler(request):
+        return httpx.Response(
+            400,
+            json={
+                "detail": {
+                    "type": "authentication_error",
+                    "message": "API key ID used as API key - API keys start with 'sk_'.",
+                }
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", _fake_transport(handler))
+    body = TestClient(app).get("/voices").json()
+    assert body["elevenlabs"] is False
+    assert "start with 'sk_'" in body["error"]
