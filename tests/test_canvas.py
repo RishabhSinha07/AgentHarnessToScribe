@@ -115,3 +115,20 @@ def test_bad_ops_are_collected_not_raised(bad):
     c = Canvas()
     c.run(bad)
     assert c.errors
+
+
+# --- agent-facing behaviour -------------------------------------------------
+
+
+def test_parse_errors_name_the_correct_form():
+    """An agent told only 'bad args' guesses again; one told the shape fixes it."""
+    c = Canvas()
+    c.run("box 1,2")
+    assert "box x,y,w,h" in c.errors[0]
+
+
+def test_unknown_command_lists_the_known_ones():
+    c = Canvas()
+    c.run("scribble 1 2")
+    assert "Known commands" in c.errors[0]
+    assert "ellipse" in c.errors[0]

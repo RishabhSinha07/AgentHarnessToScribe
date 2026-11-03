@@ -17,7 +17,32 @@ from .canvas import GRID_H, GRID_W, PENS
 from .live import SERVER
 from .session import REGISTRY
 
-mcp = MCPServer("scribe")
+INSTRUCTIONS = """\
+Scribe is a whiteboard you draw on *while you explain*. It is not a diagram
+generator -- the point is that the picture builds up as you talk, and that you
+can point at things and rub things out.
+
+How to teach with it:
+
+1. Call scribe_open(topic) once. Give the user the URL it returns.
+2. Draw in SCENES of roughly 5-15 ops, not one big dump. A finished diagram
+   that appears all at once is the failure mode this tool exists to fix.
+3. Interleave `say` with the drawing. Draw a thing, say what it is, draw the
+   next thing. That ordering IS the teaching.
+4. Point. When you refer to something, `circle` it -- the note on the circle is
+   spoken aloud as the gesture happens.
+5. READ THE REPORT from every scribe_draw. It names collisions and ops that
+   failed. A collision means something is now unreadable: erase and redraw it
+   before continuing. Do not push on and hope.
+6. Only call scribe_look when the report says something is wrong, or at the end
+   to check the whole board reads well. It costs an image; the report is free.
+7. When the report says the page is filling up, erase a region you have
+   finished with, or start a new `page`.
+
+Call scribe_reference for the command list before your first scribe_draw.
+"""
+
+mcp = MCPServer("scribe", instructions=INSTRUCTIONS)
 
 DSL_REFERENCE = f"""\
 The whiteboard is a {GRID_W} wide x {GRID_H} tall grid. (0,0) is top-left.
@@ -57,19 +82,31 @@ def scribe_reference() -> str:
 
 
 @mcp.tool()
-def scribe_open(topic: str) -> str:
-    """Open a new lesson and start the viewer. Returns the URL to watch it at.
+def scribe_open(topic: str, open_browser: bool = True) -> str:
+    """Open a new lesson, start the viewer, and show it to the user.
 
     Args:
         topic: What the lesson is about, shown above the board.
+        open_browser: Pop the board up automatically. Set False on a headless
+            machine, or when the user already has the board open.
     """
-    base = SERVER.start()
+    try:
+        base = SERVER.start()
+    except RuntimeError as exc:
+        return f"Could not start the viewer: {exc}"
+
     session = REGISTRY.open(topic)
+    url = f"{base}/?s={session.sid}"
+    opened = SERVER.open_in_browser(f"/?s={session.sid}") if open_browser else False
+
+    head = f"Lesson open: {topic!r}\nViewer: {url}\n" + (
+        "The board should have opened in the user's browser.\n"
+        if opened
+        else f"Ask the user to open {url}\n"
+    )
     return (
-        f"Lesson open: {topic!r}\n"
-        f"Watch it at: {base}/?s={session.sid}\n"
-        f"Tell the user to open that URL, then draw with scribe_draw.\n\n"
-        f"{DSL_REFERENCE}"
+        f"{head}\nDraw in scenes of 5-15 ops, interleaving `say` with the drawing, "
+        f"and read the report after each one.\n\n{DSL_REFERENCE}"
     )
 
 
@@ -119,6 +156,23 @@ def scribe_erase_preview(x: float, y: float, w: float, h: float) -> str:
         fully = x <= e.x0 and x + w >= e.x1 and y <= e.y0 and y + h >= e.y1
         lines.append(f"  {'remove' if fully else 'CLIP'} {e.describe()}")
     return "\n".join(lines)
+
+
+@mcp.tool()
+def scribe_undo(scenes: int = 1) -> str:
+    """Roll back the last N scribe_draw calls and replay the board without them.
+
+    Use when a scene came out wrong and erasing would be messier than starting
+    it again. Erase destroys pixels; this rebuilds from the op log instead.
+
+    Args:
+        scenes: How many draw calls to undo. Defaults to the last one.
+    """
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
+    return session.undo(max(1, scenes))
 
 
 @mcp.tool()

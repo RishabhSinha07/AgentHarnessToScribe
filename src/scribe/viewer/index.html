@@ -650,6 +650,12 @@
         if (msg.ops) appendOps(msg.ops);
       } else if (msg.type === "ops") {
         appendOps(msg.ops);
+      } else if (msg.type === "reset") {
+        // The agent undid a scene; drop everything and replay the survivors.
+        ops.length = 0; starts.length = 0; total = 0; time = 0;
+        speech.stop(); renderLog();
+        if (msg.ops) appendOps(msg.ops);
+        time = total; paint();
       } else if (msg.type === "closed") {
         setStatus("off", "lesson ended");
       }

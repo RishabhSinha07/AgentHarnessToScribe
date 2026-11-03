@@ -53,6 +53,22 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size)
 
 
+# Shown back to the agent when an op fails to parse. A model that is told the
+# right shape fixes itself; one told only "bad args" guesses again.
+USAGE: dict[str, str] = {
+    "text": 'text x,y <words>            e.g.  text 12,1.5 "Binary search"',
+    "box": 'box x,y,w,h <label>         e.g.  box 5,7 3,2.5 "Client"',
+    "ellipse": 'ellipse x,y,rx,ry <label>   e.g.  ellipse 18,11 2,1.5 "h2"',
+    "arrow": 'arrow x1,y1 x2,y2 <label>   e.g.  arrow 11,7 15,7 "GET /x"',
+    "circle": 'circle x,y,r <spoken note>  e.g.  circle 18.5,11.25 3 "this one"',
+    "stroke": "stroke x1,y1 x2,y2 ...      e.g.  stroke 2,20 38,20",
+    "erase": "erase x,y,w,h <note>  OR  erase x,y,r <note>",
+    "pen": "pen <ink|red|blue|green|grey>",
+    "page": "page <title>",
+    "say": 'say <text>                  e.g.  say "Now the hard part."',
+}
+
+
 @dataclass
 class OpResult:
     ok: bool
@@ -335,7 +351,7 @@ class Canvas:
             if cmd == "stroke":
                 pts = [tuple(float(v) for v in p.split(",")) for p in args if "," in p]
                 if len(pts) < 2:
-                    return OpResult(False, "stroke needs >=2 points like 3,4 10,4")
+                    return OpResult(False, f"stroke needs >=2 points. {USAGE['stroke']}")
                 self.stroke(pts)
             elif cmd == "box":
                 (x, y, w, h), used = take(4)
@@ -370,9 +386,14 @@ class Canvas:
             elif cmd == "say":
                 self.say(label_after(0))
             else:
-                return OpResult(False, f"unknown command {cmd!r}")
+                return OpResult(
+                    False,
+                    f"unknown command {cmd!r}. Known commands: {', '.join(sorted(USAGE))}",
+                )
         except (ValueError, IndexError) as exc:
-            return OpResult(False, f"bad args for {cmd!r}: {exc}")
+            hint = USAGE.get(cmd)
+            detail = f"bad args for {cmd!r}: {exc}"
+            return OpResult(False, f"{detail}. Correct form: {hint}" if hint else detail)
         return OpResult(True, cmd)
 
     def run(self, script: str) -> list[str]:

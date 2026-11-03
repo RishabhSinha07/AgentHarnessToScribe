@@ -30,6 +30,8 @@ class Session:
     sid: str = field(default_factory=lambda: secrets.token_urlsafe(6))
     canvas: Canvas = field(default_factory=Canvas)
     ops: list[str] = field(default_factory=list)
+    # Index into `ops` at the start of each draw call, so a scene can be undone.
+    marks: list[int] = field(default_factory=list)
     # Each viewer gets its own queue, so a slow tab cannot stall the others.
     viewers: list[asyncio.Queue[str]] = field(default_factory=list)
 
@@ -40,11 +42,52 @@ class Session:
         self.canvas.run(script)
 
         lines = [ln for ln in script.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        self.marks.append(len(self.ops))
         self.ops.extend(lines)
         for line in lines:
             self.broadcast(line)
 
         return self.canvas.state_summary()
+
+    def undo(self, scenes: int = 1) -> str:
+        """Roll back the last N draw calls.
+
+        Erase destroys pixels, so there is nothing to "un-erase" -- the canvas
+        is rebuilt from the surviving op log instead. Viewers are reset and
+        replayed, which is why the whole log is kept.
+        """
+        if not self.marks:
+            return "Nothing to undo."
+
+        undone = min(scenes, len(self.marks))
+        keep = self.marks[len(self.marks) - undone]
+        dropped = len(self.ops) - keep
+        self.ops = self.ops[:keep]
+        self.marks = self.marks[: len(self.marks) - undone]
+
+        self.canvas = Canvas()
+        self.canvas.run("\n".join(self.ops))
+        self.canvas.clear_feedback()
+
+        self.reset_viewers()
+        return (
+            f"Undid {undone} scene(s), dropping {dropped} ops. "
+            f"{len(self.ops)} remain.\n" + self.canvas.state_summary(verbose=False)
+        )
+
+    def reset_viewers(self) -> None:
+        """Tell every viewer to clear and replay from scratch."""
+        for q in list(self.viewers):
+            self._offer_control(q, {"type": "reset", "ops": "\n".join(self.ops)})
+
+    def _offer_control(self, q: asyncio.Queue[str], payload: dict) -> None:
+        import json
+
+        msg = "\x00" + json.dumps(payload)  # NUL prefix marks a control frame
+        if _LOOP is not None and not _LOOP.is_closed():
+            _LOOP.call_soon_threadsafe(self._offer, q, msg)
+        else:
+            self._offer(q, msg)
 
     def broadcast(self, line: str) -> None:
         for q in list(self.viewers):

@@ -93,15 +93,34 @@ pointer explains itself.
 | Tool | Does |
 |---|---|
 | `scribe_reference` | The command reference. Read it first. |
-| `scribe_open(topic)` | Opens a lesson, starts the viewer, returns a URL |
+| `scribe_open(topic)` | Opens a lesson and pops the board up in the browser |
 | `scribe_draw(ops)` | Draws. Returns errors, collisions, occupancy |
 | `scribe_look()` | A PNG of the board, for the agent's own eyes |
 | `scribe_erase_preview(x,y,w,h)` | What an erase would destroy, before committing |
+| `scribe_undo(scenes)` | Rolls back the last N draw calls and replays |
 | `scribe_status()` | Topic, ops drawn, viewers connected |
 
 `scribe_draw` returns collisions **as text on every call**. That is the central
 design choice: the agent is told about an overlap cheaply, in words, and only
 spends an image on `scribe_look` when the text says something is wrong.
+
+### Built for agents to get right
+
+- **The server carries its own instructions.** The MCP server ships the
+  teaching discipline — draw in scenes, interleave narration, read the report —
+  so any client gets it without you prompting for it.
+- **Errors teach.** A malformed op comes back with the correct form:
+  `bad args for 'box': expected 4 numbers, got 2. Correct form: box x,y,w,h <label>`
+- **Undo, not just erase.** Erasing destroys pixels. `scribe_undo` rebuilds the
+  board from the op log and replays it to every viewer.
+- **Dry runs before destructive moves.** `scribe_erase_preview` names what a
+  rectangle would clip, since the eraser is blunt by design.
+- **The board opens itself**, and the server picks a free port rather than
+  handing out a URL that never loads.
+
+For Claude Code there is also a skill in `.claude/skills/whiteboard-teaching/`
+covering layout budgeting, when to point, and what to do about each kind of
+report.
 
 ---
 
@@ -124,6 +143,7 @@ thread so MCP keeps stdio to itself.
 | `mcp.py` | MCP adapter |
 | `viewer/index.html` | The board: progressive drawing, voice, scrubbing |
 | `cli.py` | `scribe-serve`, for running without an MCP client |
+| `.claude/skills/` | The teaching skill, for Claude Code |
 
 ---
 
