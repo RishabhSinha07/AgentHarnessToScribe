@@ -113,14 +113,14 @@ say     <text>                 narration, spoken at this moment
 ```
 
 A lesson reads as draw, speak, point, speak — and that ordering *is* the
-teaching:
+teaching. Say **why**, not what; the label already says what:
 
 ```
 box    5,7 3,2.5 "x1"
 box    17,5 3,2.5 "h1"
 stroke 8,8.25 17,6.25
-say    "Every input connects to every hidden unit. That's the mesh."
-highlight "h1" "Circling this one — it's where the work happens."
+say    "Everything connects to everything, because nothing yet knows what matters."
+highlight "h1" "Pick any one of them. They are interchangeable."
 ```
 
 The note on `highlight`, `circle` and `erase` is spoken aloud as the gesture
@@ -138,11 +138,33 @@ flagged in the report, with the fix named.
 |---|---|
 | `scribe_reference` | The command reference. Read it first. |
 | `scribe_open(topic)` | Opens a lesson and pops the board up in the browser |
+| `scribe_plan(...)` | The lesson's spine. **Required** — drawing is refused without it |
 | `scribe_draw(ops)` | Draws. Returns errors, collisions, occupancy |
 | `scribe_look()` | A PNG of the board, for the agent's own eyes |
 | `scribe_erase_preview(x,y,w,h)` | What an erase would destroy, before committing |
 | `scribe_undo(scenes)` | Rolls back the last N draw calls and replays |
 | `scribe_status()` | Topic, ops drawn, viewers connected |
+
+### Why planning is enforced
+
+`scribe_draw` refuses until `scribe_plan` has been called. That is the single
+most important thing in the tool surface, and it took a bad lesson to find.
+
+An agent improvising scene by scene writes narration like *"on the left, your
+inputs"* — a caption for a box the learner can already see. You write captions
+when you decide the line *while* drawing the box. It also fills the board
+before reaching the point, so the erase ends up being a space problem rather
+than a teaching move.
+
+A plan commits to four things first: the one idea, a hook (a question put on
+the board before it is answered), three to five beats that form an argument
+rather than a list of shapes, and the payoff. Naming the learner's
+misconception is optional and worth more than the rest — a model you draw
+*wrong on purpose* and then correct is the one move a finished diagram cannot
+make.
+
+The plan comes back with a layout budget, so the board is divided before any
+ink lands.
 
 `scribe_draw` returns collisions **as text on every call**. That is the central
 design choice: the agent is told about an overlap cheaply, in words, and only

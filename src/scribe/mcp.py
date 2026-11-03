@@ -15,34 +15,61 @@ from mcp.server.mcpserver import Image, MCPServer
 
 from .canvas import GRID_H, GRID_W, PENS
 from .live import SERVER
-from .session import REGISTRY
+from .session import REGISTRY, Plan
 
 INSTRUCTIONS = """\
-Scribe is a whiteboard you draw on *while you explain*. It is not a diagram
-generator -- the point is that the picture builds up as you talk, and that you
-can point at things and rub things out.
+Scribe is a whiteboard you teach at. It is not a diagram generator. The point
+is that the picture builds while you talk, that you can point at what you mean,
+and that you can rub things out.
 
-How to teach with it:
+A lesson, not a tour of a diagram:
 
-1. Call scribe_open(topic) once. Give the user the URL it returns.
-2. Draw in SCENES of roughly 5-15 ops, not one big dump. A finished diagram
-   that appears all at once is the failure mode this tool exists to fix.
-3. Interleave `say` with the drawing. Draw a thing, say what it is, draw the
-   next thing. That ordering IS the teaching.
-4. Point. When you refer to something, `highlight "<its label>"` -- the ring is
-   sized from the element's own box, and the note is spoken as it is drawn.
-5. READ THE REPORT from every scribe_draw. It names collisions and ops that
-   failed. A collision means something is now unreadable: erase and redraw it
-   before continuing. Do not push on and hope.
-6. Only call scribe_look when the report says something is wrong, or at the end
-   to check the whole board reads well. It costs an image; the report is free.
-7. When the report says the page is filling up, erase a region you have
-   finished with, or start a new `page`.
+1. scribe_open(topic). Give the user the URL it returns.
+2. scribe_plan BEFORE drawing anything -- scribe_draw will refuse until you
+   have. Decide the one idea, the question you open on, 3-5 beats, and the
+   payoff. A lesson invented scene by scene ends up narrating what is on the
+   board instead of why it matters, and fills the space before it reaches the
+   point.
+3. Then draw the beats, 5-15 ops at a time, interleaving `say` with the
+   drawing. Draw a thing, say why it matters, draw the next thing.
+4. Point. `highlight "<label>"` rings the element and speaks its note as the
+   ring is drawn.
+5. READ THE REPORT from every scribe_draw. It names collisions and failed ops.
+   A collision means something is now unreadable: erase and redraw before
+   continuing.
+6. scribe_look only when the report says something is wrong, or at the end to
+   check the whole board reads. It costs an image; the report is free.
+
+Structure, which is what makes it a lesson:
+- Open on a question, not an answer. Put the hook on the board first and leave
+  it there -- the payoff lands when the learner can still see what was asked.
+- Argue, do not enumerate. problem -> obvious fix -> why it fails -> the real
+  idea beats four boxes in a row.
+- Name the misconception and draw it. A model you deliberately draw wrong, then
+  correct, teaches more than a correct model drawn once. This is the one thing
+  a whiteboard can do that a finished diagram cannot -- use it.
+- Give the key moment room. Not every beat deserves equal weight.
 
 Call scribe_reference for the command list before your first scribe_draw.
 """
 
+
 mcp = MCPServer("scribe", instructions=INSTRUCTIONS)
+
+NARRATION_RULES = """\
+Writing the narration:
+- Say WHY, not WHAT. The label already says what the box is; a `say` that
+  reads "on the left, the inputs" is a caption, and the picture did not need
+  it. Spend the line on what the learner cannot see.
+- Open on the hook, before the answer is on the board. A question the drawing
+  then answers is worth more than the same fact stated first.
+- Earn the erase. Wiping a region should be a move you planned -- correcting a
+  model you deliberately drew wrong, or clearing space you knew you would need.
+- Never narrate your own mistakes. "Oops, I rubbed that out" is tooling noise,
+  not teaching. Fix it silently.
+- One idea per line, and keep lines short. Long sentences stall the drawing
+  while the voice catches up.
+"""
 
 DSL_REFERENCE = f"""\
 The whiteboard is a {GRID_W} wide x {GRID_H} tall grid. (0,0) is top-left.
@@ -70,6 +97,7 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
 Writing a good lesson:
 - Interleave `say` with drawing so the picture builds as you talk. Draw, speak,
   point, speak -- that ordering IS the teaching.
+- Say WHY, not WHAT. The label already says what the box is.
 - Text is about 0.5 grid units per character. Make boxes wide enough for their
   labels; you will be told if one does not fit.
 - `highlight "<label>"` is how you point. Never guess a radius with `circle`
@@ -126,6 +154,54 @@ def scribe_open(
 
 
 @mcp.tool()
+def scribe_plan(
+    idea: str,
+    hook: str,
+    beats: list[str],
+    payoff: str,
+    misconception: str = "",
+) -> str:
+    """Commit to the shape of the lesson before drawing any of it. Required.
+
+    A lesson invented scene by scene narrates what is being drawn rather than
+    why it matters, and fills the board before it reaches the point. Decide
+    the arc first; then the drawing executes a plan instead of inventing one.
+
+    Args:
+        idea: The ONE thing the learner should leave with. One sentence.
+        hook: The question the drawing answers, asked before you answer it.
+            Open with this on the board.
+        beats: 3-5 scenes in order. A beat is a step in the argument, not a
+            list of shapes: "one server falls over under load", not "draw
+            three boxes". Good lessons go problem -> obvious fix -> why it
+            fails -> the real idea.
+        payoff: The closing insight the hook has been waiting for.
+        misconception: What the learner probably believes that is wrong. If
+            you can name it, the lesson has something to push against.
+    """
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
+
+    if not beats:
+        return "A plan needs at least one beat. Three to five is usually right."
+
+    session.plan = Plan(
+        idea=idea.strip(),
+        hook=hook.strip(),
+        beats=[b.strip() for b in beats],
+        payoff=payoff.strip(),
+        misconception=misconception.strip(),
+    )
+    return (
+        f"Plan set for {session.topic!r}.\n\n"
+        f"{session.plan.budget(session.canvas.grid_w, session.canvas.grid_h)}\n\n"
+        f"{NARRATION_RULES}"
+    )
+
+
+@mcp.tool()
 def scribe_draw(ops: str) -> str:
     """Draw on the board. Ops stream to the viewer live, one line at a time.
 
@@ -139,6 +215,15 @@ def scribe_draw(ops: str) -> str:
         session = REGISTRY.require_current()
     except LookupError as exc:
         return str(exc)
+
+    if session.plan is None:
+        return (
+            "No plan yet -- nothing was drawn.\n\n"
+            "Call scribe_plan first. Lessons improvised scene by scene end up "
+            "narrating what is on the board instead of why it matters, and run "
+            "out of room before they reach the point. Decide the idea, the "
+            "hook, the beats and the payoff, then draw them."
+        )
     return session.draw(ops)
 
 
@@ -202,13 +287,27 @@ def scribe_status() -> str:
     session = REGISTRY.current
     if session is None:
         return "No lesson open."
-    return (
-        f"Topic: {session.topic}\n"
-        f"Viewer: {SERVER.url}/?s={session.sid}\n"
-        f"Ops drawn: {len(session.ops)}\n"
-        f"Viewers connected: {len(session.viewers)}\n\n"
-        f"{session.canvas.state_summary(verbose=False)}"
-    )
+    lines = [
+        f"Topic: {session.topic}",
+        f"Viewer: {SERVER.url}/?s={session.sid}",
+        f"Ops drawn: {len(session.ops)}",
+        f"Viewers connected: {len(session.viewers)}",
+    ]
+    if session.plan is None:
+        lines.append("No plan yet -- scribe_draw will refuse until scribe_plan is called.")
+    else:
+        pl = session.plan
+        lines += [
+            "",
+            f"Idea:   {pl.idea}",
+            f"Hook:   {pl.hook}",
+            *([f"Myth:   {pl.misconception}"] if pl.misconception else []),
+            "Beats:",
+            *[f"  {i}. {b}" for i, b in enumerate(pl.beats, 1)],
+            f"Payoff: {pl.payoff}",
+        ]
+    lines += ["", session.canvas.state_summary(verbose=False)]
+    return "\n".join(lines)
 
 
 def main() -> None:

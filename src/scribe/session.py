@@ -14,6 +14,50 @@ from pathlib import Path
 
 from .canvas import Canvas
 
+
+@dataclass
+class Plan:
+    """The spine of a lesson, committed to before any ink goes down.
+
+    Improvised lessons narrate what is being drawn rather than why it matters,
+    because a line written while drawing a box describes the box. Deciding the
+    arc first is what lets a scene set up a payoff instead of just adding
+    another shape.
+    """
+
+    idea: str  # the one thing the learner leaves with
+    hook: str  # the question the drawing answers
+    beats: list[str]  # 3-5 scenes, in order
+    payoff: str  # the closing insight
+    misconception: str = ""  # what they probably believe that is wrong
+
+    def budget(self, grid_w: int, grid_h: int) -> str:
+        """A rough spatial plan, so the board does not fill up by accident."""
+        title_h, payoff_h = 3, 4
+        body = grid_h - title_h - payoff_h
+        per = body / max(1, len(self.beats))
+        rows = []
+        y = title_h
+        for i, beat in enumerate(self.beats, 1):
+            rows.append(f"  beat {i}  y {y:.0f}-{y + per:.0f}   {beat}")
+            y += per
+        return "\n".join(
+            [
+                f"Board is {grid_w} wide x {grid_h} tall. A rough budget:",
+                f"  title   y 0-{title_h}",
+                *rows,
+                f"  payoff  y {grid_h - payoff_h}-{grid_h}   {self.payoff}",
+                "",
+                (
+                    "This is a budget, not a grid -- a beat may span the board. What "
+                    "matters is that you know before you start which region you will "
+                    "erase to make room, so the wipe reads as a deliberate move "
+                    "rather than running out of space."
+                ),
+            ]
+        )
+
+
 # The viewer queues live on the web server's event loop, but ops are drawn from
 # the MCP thread. Puts have to be handed across rather than made directly.
 _LOOP: asyncio.AbstractEventLoop | None = None
@@ -32,6 +76,7 @@ class Session:
     ops: list[str] = field(default_factory=list)
     # Index into `ops` at the start of each draw call, so a scene can be undone.
     marks: list[int] = field(default_factory=list)
+    plan: Plan | None = None
     # Each viewer gets its own queue, so a slow tab cannot stall the others.
     viewers: list[asyncio.Queue[str]] = field(default_factory=list)
 
@@ -109,14 +154,14 @@ class Session:
         import json
 
         msg = "\x00" + json.dumps(payload)  # NUL prefix marks a control frame
-        if _LOOP is not None and not _LOOP.is_closed():
+        if _LOOP is not None and _LOOP.is_running():
             _LOOP.call_soon_threadsafe(self._offer, q, msg)
         else:
             self._offer(q, msg)
 
     def broadcast(self, line: str) -> None:
         for q in list(self.viewers):
-            if _LOOP is not None and not _LOOP.is_closed():
+            if _LOOP is not None and _LOOP.is_running():
                 _LOOP.call_soon_threadsafe(self._offer, q, line)
             else:
                 self._offer(q, line)

@@ -14,10 +14,44 @@ exists to fix.
 
 1. `scribe_open(topic)` once. It opens the board in the user's browser and
    returns the URL.
-2. `scribe_reference()` before your first draw, if you have not read it.
-3. Draw a **scene**: 5–15 ops, interleaving `say` with the drawing.
-4. **Read the report.** Fix anything it flags. Then the next scene.
-5. `scribe_look()` at the end to check the whole board reads well.
+2. **`scribe_plan(...)` before any ink.** `scribe_draw` refuses until you have.
+3. `scribe_reference()` before your first draw, if you have not read it.
+4. Draw a **beat**: 5–15 ops, interleaving `say` with the drawing.
+5. **Read the report.** Fix anything it flags. Then the next beat.
+6. `scribe_look()` at the end to check the whole board reads well.
+
+## Plan first, and plan an argument
+
+The planning step is not bureaucracy — it is the difference between a lesson
+and a tour of a diagram. Improvising produces narration like *"on the left,
+your inputs"*: a caption for a box the learner can already see. You write
+captions when you decide the line while drawing the box.
+
+A plan needs four things, and the fourth is the one people skip:
+
+- **The one idea.** If they remember a single sentence, this is it.
+- **The hook.** A question the drawing answers. Put it on the board *first*
+  and leave it there, so the payoff lands while the question is still visible.
+- **The beats.** Steps in an argument, not a list of shapes. "One server
+  buckles under load" is a beat; "draw three boxes" is not. The shape that
+  almost always works: **problem → obvious fix → why it fails → the real idea.**
+- **The misconception.** What does the learner probably believe that is wrong?
+  Name it and you have something to push against. Draw it wrong on purpose,
+  then correct it — that correction is the one move a finished diagram cannot
+  make, and it is the best reason this tool exists.
+
+## Narration rules
+
+- **Say why, not what.** The label says what. If a `say` line would still be
+  true with the diagram covered up, it is carrying its weight; if it only
+  describes what is on screen, cut it.
+- **Never narrate your own mistakes.** *"Oops, I rubbed that out"* is tooling
+  noise. Fix it silently and keep teaching.
+- **Earn the erase.** Wiping should be a move you planned, not a reaction to
+  running out of room. Plan which region goes, and say why as it goes.
+- **One idea per line, short lines.** Long sentences stall the drawing while
+  the voice catches up.
+- **Give the key moment room.** Not every beat deserves equal weight.
 
 ## Writing a scene
 

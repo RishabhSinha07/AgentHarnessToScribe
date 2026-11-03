@@ -6,7 +6,20 @@ import json
 import pytest
 
 from scribe import Canvas
-from scribe.session import Registry, Session
+from scribe.session import Registry, Session, set_broadcast_loop
+
+
+@pytest.fixture(autouse=True)
+def _no_server():
+    """Deliver broadcasts synchronously.
+
+    Session hands puts to the web server's event loop when one is running.
+    Another test starting the server sets that loop process-wide, after which
+    these synchronous assertions race it.
+    """
+    set_broadcast_loop(None)
+    yield
+    set_broadcast_loop(None)
 
 
 def test_draw_logs_ops_and_skips_comments():
