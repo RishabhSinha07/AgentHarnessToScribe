@@ -19,6 +19,18 @@ def serve() -> None:
     ap.add_argument(
         "--grid", default="", metavar="WxH", help="Board size, e.g. 40x30. Defaults to 64x36."
     )
+    ap.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not open a browser; just print the URL and wait for a viewer.",
+    )
+    ap.add_argument(
+        "--wait",
+        type=float,
+        default=20.0,
+        metavar="SECONDS",
+        help="How long to wait for a viewer before drawing anyway.",
+    )
     args = ap.parse_args()
 
     grid: tuple[int, int] | None = None
@@ -32,11 +44,28 @@ def serve() -> None:
     SERVER.port = args.port
     url = SERVER.start()
     session = REGISTRY.open(args.topic, *(grid or (None, None)))
-    print(f"Watch at: {url}/?s={session.sid}", flush=True)
+    watch = f"{url}/?s={session.sid}"
+    print(f"Watch at: {watch}", flush=True)
 
     if args.ops:
-        # Give a browser a moment to connect before the drawing starts.
-        time.sleep(1.5)
+        if not args.no_browser:
+            SERVER.open_in_browser(f"/?s={session.sid}")
+
+        # Wait for a viewer before drawing. Sleeping a fixed interval and
+        # hoping was the old behaviour, and it lost the race every time: the
+        # viewer arrived after the ops and painted a finished, silent board.
+        deadline = time.monotonic() + args.wait
+        while not session.viewers and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if not session.viewers:
+            print(
+                f"No viewer connected after {args.wait:g}s. Drawing anyway -- "
+                f"open {watch} and press Replay.",
+                flush=True,
+            )
+        else:
+            time.sleep(0.4)  # let the board finish its first paint
+
         print(session.draw(args.ops.read_text(encoding="utf-8")), flush=True)
 
     print("Serving. Ctrl-C to stop.", flush=True)

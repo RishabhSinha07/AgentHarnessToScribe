@@ -62,6 +62,7 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
   erase   x,y,w,h <spoken note>  erase a rectangle
   erase   x,y,r <spoken note>    erase a square of radius r
   pen     <{"|".join(sorted(set(PENS)))}>
+  board   W H                    declare the board size. First line only.
   page    <title>                wipe to a clean page
   say     <text>                 narration spoken at this moment
   # ...                          comment
@@ -142,13 +143,16 @@ def scribe_draw(ops: str) -> str:
 
 
 @mcp.tool()
-def scribe_look() -> Image:
+def scribe_look() -> Image | str:
     """Look at the board. Returns a PNG of the canvas as it stands.
 
     Use after scribe_draw reports a collision, or when checking that a layout
     reads well. Costs an image, so prefer the text report when it is clean.
     """
-    session = REGISTRY.require_current()
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
     path = Path(tempfile.gettempdir()) / f"scribe_{session.sid}.png"
     session.snapshot(path)
     return Image(data=path.read_bytes(), format="png")
@@ -161,7 +165,10 @@ def scribe_erase_preview(x: float, y: float, w: float, h: float) -> str:
     Args:
         x: Left edge. y: Top edge. w: Width. h: Height.
     """
-    session = REGISTRY.require_current()
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
     hit = session.canvas.erase_preview(x, y, x + w, y + h)
     if not hit:
         return f"Erasing ({x},{y}) {w}x{h} would not touch anything."

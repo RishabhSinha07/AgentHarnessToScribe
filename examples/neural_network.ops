@@ -1,3 +1,6 @@
+# This lesson was laid out for a 40x30 board.
+board 40 30
+
 text 11,1.5 "How a neural network learns"
 say "Let's start with the shape of the thing. It's just layers of small units."
 

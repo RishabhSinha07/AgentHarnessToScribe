@@ -1,9 +1,11 @@
 """Session behaviour the agent depends on: op log, undo, viewer fan-out."""
 
 import asyncio
+import json
 
 import pytest
 
+from scribe import Canvas
 from scribe.session import Registry, Session
 
 
@@ -72,3 +74,31 @@ def test_slow_viewer_is_dropped_not_blocking():
     s.viewers.append(q)
     s.draw('box 1,1 2,2 "a"\nbox 4,4 2,2 "b"\nbox 8,8 2,2 "c"')
     assert q not in s.viewers
+
+
+def test_ops_that_failed_to_parse_are_not_broadcast():
+    """The student must not hear a line the canvas never recorded."""
+    s = Session("t")
+    s.draw('box 2,2 6,3 "good"\nbox 1,2\nsay "fine"')
+    assert s.ops == ['box 2,2 6,3 "good"', 'say "fine"']
+
+
+def test_undo_keeps_the_board_size():
+    s = Session("t")
+    s.canvas = Canvas(grid_w=40, grid_h=30)
+    s.draw('box 2,2 4,2 "a"')
+    s.draw('box 2,8 4,2 "b"')
+    s.undo()
+    assert (s.canvas.grid_w, s.canvas.grid_h) == (40, 30)
+
+
+def test_reset_frame_carries_the_grid():
+    s = Session("t")
+    s.canvas = Canvas(grid_w=40, grid_h=30)
+    q = s.subscribe()
+    s.draw('box 2,2 4,2 "a"')
+    while not q.empty():
+        q.get_nowait()
+    s.undo()
+    msg = json.loads(q.get_nowait()[1:])
+    assert msg["grid"] == [40, 30]

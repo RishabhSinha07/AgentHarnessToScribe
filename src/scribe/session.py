@@ -41,7 +41,22 @@ class Session:
         self.canvas.clear_feedback()
         self.canvas.run(script)
 
-        lines = [ln for ln in script.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        # Only ops the canvas accepted reach the viewer. Broadcasting a line
+        # that failed to parse would have the student hear narration the agent
+        # never recorded, and `scribe_look` would show a board nobody is seeing.
+        bad = {
+            int(m.split(":")[0].removeprefix("line "))
+            for m in self.canvas.errors
+            if m.startswith("line ")
+        }
+        lines, n = [], 0
+        for raw in script.splitlines():
+            if not raw.strip() or raw.strip().startswith("#"):
+                continue
+            n += 1
+            if n not in bad:
+                lines.append(raw)
+
         self.marks.append(len(self.ops))
         self.ops.extend(lines)
         for line in lines:
@@ -65,7 +80,10 @@ class Session:
         self.ops = self.ops[:keep]
         self.marks = self.marks[: len(self.marks) - undone]
 
-        self.canvas = Canvas()
+        # Keep the board the same size -- a fresh default Canvas() silently
+        # resized a 40x30 lesson to 64x36, leaving agent and viewer in
+        # different coordinate systems.
+        self.canvas = Canvas(grid_w=self.canvas.grid_w, grid_h=self.canvas.grid_h)
         self.canvas.run("\n".join(self.ops))
         self.canvas.clear_feedback()
 
@@ -78,7 +96,14 @@ class Session:
     def reset_viewers(self) -> None:
         """Tell every viewer to clear and replay from scratch."""
         for q in list(self.viewers):
-            self._offer_control(q, {"type": "reset", "ops": "\n".join(self.ops)})
+            self._offer_control(
+                q,
+                {
+                    "type": "reset",
+                    "grid": [self.canvas.grid_w, self.canvas.grid_h],
+                    "ops": "\n".join(self.ops),
+                },
+            )
 
     def _offer_control(self, q: asyncio.Queue[str], payload: dict) -> None:
         import json

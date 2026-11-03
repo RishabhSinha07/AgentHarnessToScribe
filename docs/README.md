@@ -1,6 +1,6 @@
 # Showcase
 
-`index.html` is a **self-contained** replay of a lesson Claude drew — no server,
+`index.html` is the public demo — a **self-contained** replay of a lesson Claude drew — no server,
 no build step, no network beyond Google Fonts. Open it in a browser, or serve
 this directory with GitHub Pages for a public demo link:
 

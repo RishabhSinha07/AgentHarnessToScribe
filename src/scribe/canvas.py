@@ -10,7 +10,7 @@ from __future__ import annotations
 import itertools
 import math
 import random
-import shlex
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +46,19 @@ _FONT_CANDIDATES = [
 ]
 
 
+# Matches the viewer's tokenizer exactly. shlex.split() was wrong here: it
+# treats a bare apostrophe as an opening quote, so "say It's fine" failed to
+# parse in Python while the browser accepted it -- the student heard a line the
+# canvas never recorded.
+_TOKEN = re.compile(r'"([^"]*)"|(\S+)')
+
+
+def tokenize(line: str) -> list[str]:
+    # finditer, not findall: findall yields "" for an unmatched group, so the
+    # quoted-vs-bare test has to be made against the match object.
+    return [m.group(1) if m.group(1) is not None else m.group(2) for m in _TOKEN.finditer(line)]
+
+
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
     for path in _FONT_CANDIDATES:
         if Path(path).exists():
@@ -70,6 +83,7 @@ USAGE: dict[str, str] = {
     "stroke": "stroke x1,y1 x2,y2 ...      e.g.  stroke 2,20 38,20",
     "erase": "erase x,y,w,h <note>  OR  erase x,y,r <note>",
     "pen": "pen <ink|red|blue|green|grey>",
+    "board": "board W H                   e.g.  board 40 30 (first line only)",
     "page": "page <title>",
     "say": 'say <text>                  e.g.  say "Now the hard part."',
 }
@@ -130,7 +144,7 @@ class Canvas:
     narration: list[str] = field(default_factory=list)
     elements: list[Element] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    collisions: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # advisory, per scene
     wiped: list[str] = field(default_factory=list)  # what each erase took out
     page: int = 0
     pen: tuple[int, int, int] = INK
@@ -154,7 +168,7 @@ class Canvas:
 
     # --- bookkeeping --------------------------------------------------------
     def _add(self, kind, label, x0, y0, x1, y1, transparent=False) -> Element:
-        """Record an element and flag anything solid it lands on top of."""
+        """Record an element, flagging it if it falls outside the board."""
         el = Element(
             kind,
             label,
@@ -165,10 +179,22 @@ class Canvas:
             page=self.page,
             transparent=transparent,
         )
-        if not transparent:
-            for other in self.elements:
-                if other.page == self.page and other.solid and el.overlaps(other):
-                    self.collisions.append(f"{el.describe()} overlaps {other.describe()}")
+
+        # Drawing past the edge used to be silent -- the op "succeeded", the ink
+        # landed outside the image, and the report said all was well. An agent
+        # reasoning about a 64x36 board will write y=40 sooner or later.
+        if el.x1 < 0 or el.y1 < 0 or el.x0 > self.grid_w or el.y0 > self.grid_h:
+            self.errors.append(
+                f"{kind} at ({el.x0:g},{el.y0:g})-({el.x1:g},{el.y1:g}) is entirely "
+                f"off the {self.grid_w}x{self.grid_h} board -- nothing was drawn"
+            )
+        elif kind != "erase" and (
+            el.x0 < 0 or el.y0 < 0 or el.x1 > self.grid_w or el.y1 > self.grid_h
+        ):
+            self.notes.append(
+                f"{el.describe()} runs off the {self.grid_w}x{self.grid_h} board "
+                f"-- part of it is not visible"
+            )
         self.elements.append(el)
         return el
 
@@ -202,7 +228,7 @@ class Canvas:
             # Warn when a label will not fit inside the box that holds it.
             need = len(label) * CHAR_W
             if need > w:
-                self.collisions.append(
+                self.notes.append(
                     f"label {label!r} needs ~{need:.1f} units but its box is {w:g} wide"
                 )
             self.text(x + w / 2, y + h / 2, label, center=True, _log=False)
@@ -319,7 +345,7 @@ class Canvas:
                 and ring.y1 >= other.y1
             )
             if not encloses:
-                self.collisions.append(
+                self.notes.append(
                     f"circle ({x:g},{y:g}) r={r:g} cuts across {other.describe()} "
                     f"instead of enclosing it -- use `highlight {other.label!r}` "
                     f"and the ring will be sized for you"
@@ -363,6 +389,20 @@ class Canvas:
         if note:
             self.narration.append(note)
 
+    def set_board(self, w: float, h: float) -> None:
+        """Resize the board. Only valid before anything is drawn.
+
+        Lets a lesson declare the stage it was written for, instead of the
+        reader having to know a command-line flag.
+        """
+        if self.elements:
+            raise ValueError("board must come before anything is drawn")
+        if not (8 <= w <= 200 and 6 <= h <= 200):
+            raise ValueError(f"board {w:g}x{h:g} is out of range (8..200 by 6..200)")
+        self.grid_w, self.grid_h = int(w), int(h)
+        self._img = Image.new("RGB", (self.grid_w * CELL, self.grid_h * CELL), PAPER)
+        self._draw = ImageDraw.Draw(self._img)
+
     def new_page(self, title: str = "") -> None:
         """Wipe to a clean page. Elements stay in history, tagged to the old page."""
         self._img.paste(PAPER, (0, 0, self._img.size[0], self._img.size[1]))
@@ -371,13 +411,56 @@ class Canvas:
             self.text(1.5, 1.5, title)
 
     @property
+    def collisions(self) -> list[str]:
+        """Solid elements currently overlapping, plus any advisory notes.
+
+        Derived rather than accumulated. A collision the agent has since
+        repaired -- by erasing the offender and redrawing it -- disappears from
+        the report, instead of standing forever and sending the agent in
+        circles trying to fix something that is already fixed.
+        """
+        live = [e for e in self.live if e.solid]
+        found = [
+            f"{a.describe()} overlaps {b.describe()}"
+            for i, a in enumerate(live)
+            for b in live[i + 1 :]
+            if a.overlaps(b)
+        ]
+        return found + self.notes
+
+    @property
     def occupancy(self) -> float:
-        """Roughly how much of the page carries ink, 0..1 -- a fullness signal."""
-        cells = set()
-        for e in self.live:
-            for gx in range(max(0, int(e.x0)), min(self.grid_w, int(e.x1) + 1)):
-                for gy in range(max(0, int(e.y0)), min(self.grid_h, int(e.y1) + 1)):
+        """Roughly how much of the page carries ink, 0..1 -- a fullness signal.
+
+        Counting bounding boxes was useless: one diagonal `stroke 0,0 64,36`
+        has a box covering the whole board and reported 100% full, and the
+        example lesson's input mesh pushed it to 67% on a mostly-white page.
+        Solid shapes occupy their box; freehand and arrows occupy the cells
+        their path actually passes through.
+        """
+        cells: set[tuple[int, int]] = set()
+
+        def fill(x0, y0, x1, y1):
+            for gx in range(max(0, int(x0)), min(self.grid_w, int(x1) + 1)):
+                for gy in range(max(0, int(y0)), min(self.grid_h, int(y1) + 1)):
                     cells.add((gx, gy))
+
+        for e in self.live:
+            if e.kind in ("erase", "circle", "highlight"):
+                continue  # erasures remove ink; rings sit over what is there
+            if e.kind in ("stroke", "arrow"):
+                # Walk the diagonal of the box rather than filling it.
+                steps = max(1, int(max(e.x1 - e.x0, e.y1 - e.y0) * 2))
+                for i in range(steps + 1):
+                    t = i / steps
+                    fill(
+                        e.x0 + (e.x1 - e.x0) * t,
+                        e.y0 + (e.y1 - e.y0) * t,
+                        e.x0 + (e.x1 - e.x0) * t,
+                        e.y0 + (e.y1 - e.y0) * t,
+                    )
+            else:
+                fill(e.x0, e.y0, e.x1, e.y1)
         return len(cells) / (self.grid_w * self.grid_h)
 
     def say(self, s: str) -> None:
@@ -388,10 +471,9 @@ class Canvas:
         line = line.strip()
         if not line or line.startswith("#"):
             return OpResult(True, "skip")
-        try:
-            parts = shlex.split(line)
-        except ValueError as exc:
-            return OpResult(False, f"unparseable: {exc}")
+        parts = tokenize(line)
+        if not parts:
+            return OpResult(True, "skip")
 
         cmd, args = parts[0].lower(), parts[1:]
 
@@ -454,6 +536,9 @@ class Canvas:
                 if name not in PENS:
                     return OpResult(False, f"unknown pen {name!r}; try {sorted(PENS)}")
                 self.pen = PENS[name]
+            elif cmd == "board":
+                (w, h), _ = take(2)
+                self.set_board(w, h)
             elif cmd == "page":
                 self.new_page(label_after(0))
             elif cmd == "say":
@@ -516,7 +601,11 @@ class Canvas:
         return "\n".join(out)
 
     def clear_feedback(self) -> None:
-        """Reset the per-scene problem lists, keeping the drawing itself."""
+        """Reset the per-scene problem lists, keeping the drawing itself.
+
+        Collisions are derived from the board, so there is nothing to clear --
+        they resolve themselves when the overlap is actually fixed.
+        """
         self.errors.clear()
-        self.collisions.clear()
+        self.notes.clear()
         self.wiped.clear()

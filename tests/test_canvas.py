@@ -182,3 +182,79 @@ def test_circle_that_properly_encloses_is_not_flagged():
     c = Canvas()
     c.run('box 28,16 4,2 "small"\ncircle 30,17 6')
     assert not c.collisions
+
+
+# --- regressions found in product review ------------------------------------
+
+
+def test_apostrophes_survive_parsing():
+    """shlex treated a bare apostrophe as an opening quote, so natural
+    narration failed in Python while the browser accepted it."""
+    c = Canvas()
+    c.run("say It's fine\ntext 2,2 Claude's model")
+    assert not c.errors
+    assert c.narration == ["It's fine"]
+
+
+def test_quoted_labels_still_work():
+    c = Canvas()
+    c.run('box 2,2 8,3 "a quoted label"')
+    assert [e.label for e in c.live] == ["a quoted label"]
+
+
+def test_fully_off_board_is_an_error():
+    c = Canvas()
+    c.run('box 70,50 10,4 "gone"')
+    assert any("off the" in e for e in c.errors)
+
+
+def test_partly_off_board_is_flagged():
+    c = Canvas()
+    c.run('box 60,30 10,10 "half"')
+    assert any("runs off" in m for m in c.collisions)
+
+
+def test_erasing_past_the_edge_is_normal():
+    c = Canvas()
+    c.run("erase 0,30 64,10")
+    assert not c.errors and not c.collisions
+
+
+def test_occupancy_measures_ink_not_bounding_boxes():
+    """One diagonal stroke used to report a full board."""
+    c = Canvas()
+    c.run("stroke 0,0 64,36")
+    assert c.occupancy < 0.1
+    assert "filling up" not in c.state_summary()
+
+
+def test_a_repaired_collision_stops_being_reported():
+    """Collisions are derived from the board, so fixing one clears it."""
+    c = Canvas()
+    c.run('text 11,1.5 "Title"\ntext 12,2.3 "Overlap"')
+    assert c.collisions
+    c.run('erase 11,1 10,3\ntext 11,1.5 "Title"\ntext 12,6 "Overlap"')
+    assert not c.collisions
+
+
+def test_a_lesson_can_declare_its_own_board():
+    c = Canvas()
+    assert c.grid_w == 64
+    c.run("board 40 30\nbox 2,2 6,3 'a'")
+    assert (c.grid_w, c.grid_h) == (40, 30)
+    assert not c.errors
+
+
+def test_board_must_come_first():
+    c = Canvas()
+    c.run('box 2,2 4,2 "x"\nboard 40 30')
+    assert any("before anything is drawn" in e for e in c.errors)
+
+
+def test_example_declares_the_board_it_was_written_for():
+    """The shipped lesson must render on the board it ships with, not a flag."""
+    c = Canvas()
+    c.run(EXAMPLE.read_text())
+    assert (c.grid_w, c.grid_h) == (40, 30)
+    assert not c.errors
+    assert not c.collisions

@@ -1,4 +1,4 @@
-<title>Live Scribbler</title>
+<title>Scribe — live demo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
@@ -125,9 +125,9 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Feasibility spike &middot; AgentHarnessToScribe</p>
-  <h1>Can a model drive a pen?</h1>
-  <p class="standfirst">A model wrote the drawing commands to teach how a neural network learns. This plays them back the way they were written &mdash; stroke by stroke, spoken aloud, mistakes erased on screen. The pointer and the eraser narrate themselves.</p>
+  <p class="eyebrow">Scribe &middot; live demo</p>
+  <h1>Watch an agent teach</h1>
+  <p class="standfirst">Claude wrote the drawing commands for this lesson one at a time, narrating as it went. Press play: the board draws itself, speaks, points at what it means, and rubs out its own mistakes &mdash; none of which a finished diagram can do.</p>
 
   <div class="stage">
     <div class="board"><canvas id="board" width="1040" height="780"></canvas></div>
@@ -151,50 +151,7 @@
     <div class="oplog" id="oplog"></div>
   </div>
 
-  <section>
-    <h2>What the spike found</h2>
-    <div class="verdict">
-      <div class="verdict-label">Verdict</div>
-      <div>
-        <p><strong>Yes, with one condition: text has to be text.</strong> Coordinate drawing held up far better than expected &mdash; zero syntax errors, legible layout on the first attempt. Every defect was spatial, and every one was caught only by <em>looking</em>.</p>
-        <p style="margin-top:12px">All five are now fixed, and the canvas reports them itself. Re-running the original lesson, the engine flags the title collision and the clipped <code>h1</code> without anyone having to look &mdash; which is what makes this drivable by an agent rather than by hand.</p>
-      </div>
-    </div>
-
-    <div class="tablewrap" style="margin-top:28px">
-      <table>
-        <thead><tr><th>Finding</th><th>Status</th><th>What it means for the platform</th></tr></thead>
-        <tbody>
-          <tr><td>Coordinate drawing is viable</td><td><span class="chip chip-works">Works</span></td>
-            <td>Zero syntax errors across 105 ops, legible first-pass layout on a 40&times;30 grid. The coarse grid does real work &mdash; raw pixels would not have survived this.</td></tr>
-          <tr><td>Text must be text</td><td><span class="chip chip-works">Works</span></td>
-            <td>Every label is a <code>text</code> op. Drawing letterforms by stroke was never attempted because it would not have been legible. This is the non-negotiable split.</td></tr>
-          <tr><td>Erasure is the headline capability</td><td><span class="chip chip-works">Works</span></td>
-            <td>Used for repair at 0:42 and for pedagogy at 2:10, where the zoom is wiped to reclaim space. Nothing in Mermaid or SVG can do either.</td></tr>
-          <tr><td>Pointing is the other one</td><td><span class="chip chip-works">Works</span></td>
-            <td>The red circle around <code>h2</code> is a deictic gesture &mdash; &ldquo;<em>this</em> one&rdquo;. Teaching from a diagram is mostly pointing, and no static format can point.</td></tr>
-          <tr><td>Gestures can narrate themselves</td><td><span class="chip chip-works">Works</span></td>
-            <td>An optional note on <code>circle</code> and <code>erase</code> is spoken as the gesture happens &mdash; &ldquo;circling h2 here&rdquo;, &ldquo;wiping the close-up now&rdquo;. The pointer explains itself instead of needing a separate line of narration.</td></tr>
-          <tr><td>Collision detection</td><td><span class="chip chip-works">Fixed</span></td>
-            <td>Every element now carries a bounding box. The state report leads with overlaps, and re-running scene&nbsp;1 catches the exact title collision I shipped by hand. Highlights and freehand are exempt &mdash; they are <em>meant</em> to cross things.</td></tr>
-          <tr><td>Rectangular eraser, with a dry run</td><td><span class="chip chip-works">Fixed</span></td>
-            <td><code>erase x,y,w,h</code> takes a rectangle; <code>erase_preview</code> answers &ldquo;what would this destroy?&rdquo; before committing, and names <code>h1</code> &mdash; the box I clipped by accident. Afterwards it distinguishes <code>removed</code> from <code>CLIPPED</code>.</td></tr>
-          <tr><td>Labels dodge each other</td><td><span class="chip chip-works">Fixed</span></td>
-            <td>A label that would land on a solid element steps perpendicular until the slot is clear. The <code>w1/w2/w3</code> pile-up is gone, and scene&nbsp;3 now reports no collisions.</td></tr>
-          <tr><td>Colour split from shape</td><td><span class="chip chip-works">Fixed</span></td>
-            <td><code>pen ink|red|blue|green|grey</code> sets the colour for what follows, and <code>ellipse</code> gives a neutral round shape. <code>circle</code> stays the red pointer idiom.</td></tr>
-          <tr><td>Pages, and a fullness signal</td><td><span class="chip chip-works">Fixed</span></td>
-            <td><code>page</code> wipes to a clean sheet. The state report carries occupancy and warns past 55%, so the agent learns the board is filling before it runs out of room.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="caveat">
-      <p><strong>One caveat on the method.</strong> I wrote the renderer, so I knew the coordinate system intimately before drawing a line &mdash; an advantage a fresh agent would not have. Treat this as an upper bound on how well coordinate drawing goes, not a typical case. The blind conditions in <code>run_spike.py</code> still need running against a cold model to find the floor.</p>
-    </div>
-  </section>
-
-  <footer>Throwaway spike &middot; not committed to the repository &middot; 2 November 2026</footer>
+  <footer>Scribe &middot; <a href="https://github.com/RishabhSinha07/AgentHarnessToScribe">source on GitHub</a></footer>
 </div>
 <script>window.__OPS__ = "text 11,1.5 \"How a neural network learns\"\nsay \"Let's start with the shape of the thing. It's just layers of small units.\"\n\ntext 4.5,4.5 \"Input\"\nbox 5,7 3,2.5 \"x1\"\nbox 5,12 3,2.5 \"x2\"\nbox 5,17 3,2.5 \"x3\"\nsay \"On the left, your inputs. Three numbers describing one example.\"\n\ntext 16.5,2.5 \"Hidden\"\nbox 17,5 3,2.5 \"h1\"\nbox 17,10 3,2.5 \"h2\"\nbox 17,15 3,2.5 \"h3\"\nbox 17,20 3,2.5 \"h4\"\nsay \"In the middle, a hidden layer. These are the units that learn features.\"\n\ntext 28.5,9.5 \"Output\"\nbox 29,12 3.5,2.5 \"y\"\nsay \"On the right, one output. The prediction.\"\n\nstroke 8,8.25 17,6.25\nstroke 8,8.25 17,11.25\nstroke 8,8.25 17,16.25\nstroke 8,8.25 17,21.25\nstroke 8,13.25 17,6.25\nstroke 8,13.25 17,11.25\nstroke 8,13.25 17,16.25\nstroke 8,13.25 17,21.25\nstroke 8,18.25 17,6.25\nstroke 8,18.25 17,11.25\nstroke 8,18.25 17,16.25\nstroke 8,18.25 17,21.25\nsay \"Every input connects to every hidden unit. That's the mesh.\"\n\nstroke 20,6.25 29,13.25\nstroke 20,11.25 29,13.25\nstroke 20,16.25 29,13.25\nstroke 20,21.25 29,13.25\nsay \"And every hidden unit feeds the output.\"\n# --- correction: \"Hidden\" ran into the title. Clear the band and rewrite both.\nerase 18,2.2 3 \"Rubbing out that label -- it was crowding the title.\"\ntext 11,1.5 \"How a neural network learns\"\ntext 17,3.8 \"Hidden\"\n\n# --- focus: pick one unit to open up\ncircle 18.5,11.25 3 \"Circling h2 here -- this is the one we'll open up.\"\nsay \"Every one of these units does the same small job. Let's open up h2.\"\n# --- repair: that erase clipped the top off h1. Redraw it.\nbox 17,5 3,2.5 \"h1\"\nsay \"Oops, I rubbed out the top of h1 there. Putting it back.\"\n\n# --- the zoom: what one unit actually does\ntext 1.5,23.3 \"Inside h2: multiply, add, squash\"\nsay \"Here is the whole job of a single unit. Three steps, that's all.\"\n\ntext 3.5,25.2 \"x1\"\ntext 3.5,26.6 \"x2\"\ntext 3.5,28 \"x3\"\narrow 5.5,25.2 12.6,26 \"w1\"\narrow 5.5,26.6 12.6,26.5 \"w2\"\narrow 5.5,28 12.6,27 \"w3\"\nsay \"Each incoming number is multiplied by a weight. The weights are what the network learns.\"\n\nbox 13,25 4.5,3 \"sum\"\nsay \"Add all three products together.\"\n\narrow 17.5,26.5 21,26.5\nbox 21,25 5.5,3 \"ReLU\"\nsay \"Then squash the result. ReLU just means: if it's negative, make it zero.\"\n\narrow 26.5,26.5 31,26.5\ntext 31.5,26.5 \"h2\"\nsay \"And that number is what h2 passes forward.\"\n# tie the prediction to the output box before we clear anything\narrow 32.6,13.25 33.6,13.25\ntext 34,11.5 \"guess\"\ntext 34,13.25 \"0.7\"\ntext 34,15 \"truth\"\ntext 34,16.7 \"1.0\"\nsay \"Say the network guesses 0.7, but the right answer was 1.0.\"\n\n# --- wipe the zoom. One rectangle now that erase takes w,h.\nerase 0,22.8 40,8 \"Wiping the close-up now -- we need the room.\"\nsay \"We're done with the close-up, so let me wipe it and use the space.\"\n\ntext 1.5,24.3 \"Learning: compare, then push the error backwards\"\nbox 2,26 5,2.8 \"guess 0.7\"\narrow 7,27.4 9.5,27.4\nbox 9.5,26 5,2.8 \"true 1.0\"\narrow 14.5,27.4 17,27.4\nbox 17,26 6,2.8 \"error 0.3\"\nsay \"Subtract them. That gap, 0.3, is the error.\"\n\narrow 23,27.4 25.5,27.4\nbox 25.5,26 9,2.8 \"nudge the weights\"\nsay \"Now every weight that pushed the guess too low gets nudged up a little.\"\n\narrow 28,25.8 21,23.2 \"backwards\"\nsay \"That nudge travels back through the network, layer by layer. That's backpropagation.\"\nsay \"Do this a few thousand times and the weights stop being random. That's training.\"\n";</script>
 <script>

@@ -2,10 +2,13 @@
 
 A whiteboard an agent can draw on **while it teaches**.
 
-Ask an LLM for a diagram today and you get a finished picture — or, if the
-syntax breaks halfway, nothing at all. Mermaid and SVG describe a final state.
-They have no way to express *"this box exists now, that arrow comes later"*,
-and no way to point at something while explaining it.
+Teaching at a whiteboard is mostly two things a diagram cannot do: **rubbing
+something out**, and **pointing at what you mean**. Half of explaining is
+correcting — showing a wrong model, fixing it, clearing space to go deeper —
+and the other half is deixis: "*this* queue feeds *that* worker."
+
+Mermaid and SVG describe a finished picture. Neither can erase, and neither can
+gesture.
 
 Scribe is the missing piece: a stateful canvas, a small drawing language, and an
 MCP server so any agent can draw on it live, narrate as it goes, point at what
@@ -15,8 +18,9 @@ it means, and erase what it got wrong.
 
 *Drawn by Claude, one command at a time, while explaining backpropagation.*
 
-**[▶ Watch it draw itself](https://claude.ai/code/artifact/612cf43f-a1f2-4040-9fa8-aa0daec5a375)** — the same lesson played back stroke
-by stroke, narrated aloud.
+**[▶ Watch it draw itself](https://rishabhsinha07.github.io/AgentHarnessToScribe/)** — the same lesson
+played back stroke by stroke, narrated aloud. Nothing to install.
+(Runs from `docs/`; enable GitHub Pages on `main` / `/docs` to serve it.)
 
 ---
 
@@ -38,10 +42,12 @@ while drawing it. Nothing in Mermaid can gesture.
 
 ```bash
 uv sync
-uv run scribe-serve examples/neural_network.ops --grid 40x30
+uv run scribe-serve examples/neural_network.ops
 ```
 
-Open the URL it prints. The lesson draws itself.
+Your browser opens on the board. Press **Start lesson** and it draws itself,
+narrating as it goes. (The click is not decoration — browsers refuse to speak
+until a page has had one.)
 
 ### Narration
 
@@ -49,9 +55,12 @@ Out of the box the board narrates itself with the browser's built-in speech —
 no key, no network. For a better voice, set an ElevenLabs key before starting:
 
 ```bash
-export ELEVENLABS_API_KEY=sk_...
-uv run scribe-serve examples/neural_network.ops --grid 40x30
+cp .env.example .env        # then paste your key into it
+uv run scribe-serve examples/neural_network.ops
 ```
+
+`.env` is gitignored. An `export ELEVENLABS_API_KEY=sk_...` works too, but puts
+the key in your shell history.
 
 A voice picker appears in the controls and the board speaks through ElevenLabs.
 **The key stays on the server** — the viewer asks this process for audio and
@@ -98,6 +107,7 @@ circle  x,y,r <spoken note>    RED ring at a chosen spot (empty space only)
 stroke  x1,y1 x2,y2 ...        freehand polyline
 erase   x,y,w,h <spoken note>  erase a rectangle
 pen     ink|red|blue|green|grey
+board   W H                    declare the board size (first line only)
 page    <title>                wipe to a clean page
 say     <text>                 narration, spoken at this moment
 ```
@@ -156,7 +166,12 @@ spends an image on `scribe_look` when the text says something is wrong.
 
 For Claude Code there is also a skill in `.claude/skills/whiteboard-teaching/`
 covering layout budgeting, when to point, and what to do about each kind of
-report.
+report. It is **project-scoped**, so it only loads inside this repo — copy it
+to use it anywhere:
+
+```bash
+cp -r .claude/skills/whiteboard-teaching ~/.claude/skills/
+```
 
 ---
 

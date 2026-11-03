@@ -1,4 +1,4 @@
-<title>Live Scribbler</title>
+<title>Scribe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
@@ -70,6 +70,18 @@
   }
   .subtitle.on { opacity:1; }
   .subtitle.gesture { background:rgba(46,125,91,.9); }
+
+  /* Chrome refuses speechSynthesis and audio playback until the page has had
+     a real user gesture. Without this the lesson runs silently with no hint
+     that a single click would fix it. */
+  .gate { position:absolute; inset:0; width:100%; display:flex; gap:10px;
+    flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(252,251,247,.86); border:0; border-radius:0; cursor:pointer;
+    font-family:Archivo,sans-serif; color:#1A1D21; }
+  .gate[hidden] { display:none; }
+  .gate-icon { font-size:46px; line-height:1; color:var(--accent); }
+  .gate-label { font-size:19px; font-weight:600; }
+  .gate-sub { font-size:13px; color:#697385; }
   @media (prefers-reduced-motion: reduce) { .subtitle { transition:none; } }
 
   .controls { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
@@ -93,6 +105,8 @@
     padding:8px 10px; border-radius:7px; border:1px solid var(--rule);
     background:var(--surface); color:var(--ink); cursor:pointer; max-width:190px; }
   .voice-picker[hidden] { display:none; }
+  .voice-error { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    color:var(--accent); max-width:40ch; }
 
   .oplog { max-height:150px; overflow-y:auto; padding:12px 22px 16px;
     border-top:1px solid var(--rule); background:var(--surface);
@@ -155,9 +169,14 @@
     <div class="board">
       <canvas id="board" width="1536" height="864"></canvas>
       <div class="subtitle" id="caption"><span id="captionText"></span></div>
+      <button class="gate" id="gate" type="button">
+        <span class="gate-icon">▶</span>
+        <span class="gate-label">Start lesson</span>
+        <span class="gate-sub">Browsers need a click before they will speak</span>
+      </button>
     </div>
     <div class="controls">
-      <button class="primary" id="play">Pause</button>
+      <button class="primary" id="play">Play</button>
       <button id="restart">Replay</button>
       <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" aria-label="Scrub through the lesson">
       <span class="clock" id="clock">0:00 / 0:00</span>
@@ -341,6 +360,9 @@
         }
       } else if (cmd === "pen") {
         ops.push({ cmd, name: (args[0] || "ink").toLowerCase(), raw: line });
+      } else if (cmd === "board") {
+        const [[w, h]] = take(2);
+        ops.push({ cmd, w, h, raw: line });
       } else if (cmd === "page") {
         ops.push({ cmd, title: label(0), raw: line });
       } else if (cmd === "say") {
@@ -374,6 +396,7 @@
       case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
+      case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
       case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
       case "erase":  return op.note ? Math.max(430, spokenOp(op, op.note)) : 430;
@@ -393,14 +416,23 @@
     return fresh.length;
   }
 
-  /** Replace the whole lesson with this op stream. */
-  function replaceOps(src) {
+  let hasPlayed = false;   // has this viewer ever played anything?
+
+  /** Replace the whole lesson with this op stream.
+   *
+   *  `seekToHead` matters: a reconnecting viewer should resume where the
+   *  lesson actually is, but a viewer opening a lesson that was drawn before
+   *  it connected must start at zero -- otherwise the board paints itself
+   *  fully drawn and silent, which is precisely the failure this tool exists
+   *  to fix.
+   */
+  function replaceOps(src, seekToHead) {
     ops.length = 0; starts.length = 0; total = 0; time = 0;
     speech.stop();
     speech.spokenIdx = -1;
     renderLog();
     if (src) appendOps(src);
-    time = total;
+    if (seekToHead) time = total;
     paint();
   }
 
@@ -470,10 +502,15 @@
           break;
         }
         case "pen": pen = PENS[op.name] || PEN; break;
+        case "board":
+          // The lesson declares the stage it was written for.
+          if (GRID_W !== op.w || GRID_H !== op.h) sizeBoard(op.w, op.h);
+          break;
         case "page":
           // Wipe to a clean page, then drop any solids from the old one.
           ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
           solids = [];
+          labelled.clear();   // or `highlight` would ring a box from a wiped page
           if (op.title) drawText(1.5, 1.5, op.title, 20, false, t);
           break;
         case "ellipse": {
@@ -746,6 +783,9 @@
   }
 
   function setPlaying(on) {
+    // Starting playback before the gate opens would run the lesson silently.
+    if (on && gated) return;
+    if (on) hasPlayed = true;
     playing = on;
     playBtn.textContent = on ? "Pause" : "Play";
     if (!on) speech.stop();
@@ -758,7 +798,11 @@
     }
   }
 
-  playBtn.addEventListener("click", () => setPlaying(!playing));
+  playBtn.addEventListener("click", () => {
+    if (gated) { openGate(); return; }
+    hasPlayed = true;
+    setPlaying(!playing);
+  });
   restartBtn.addEventListener("click", () => { time = 0; speech.stop(); setFollowing(false); paint(); setPlaying(true); });
   scrub.addEventListener("input", () => {
     time = (Number(scrub.value) / 1000) * total;
@@ -789,8 +833,17 @@
   const picker = document.getElementById("voicePicker");
   fetch("/voices").then(r => r.json()).then(info => {
     if (!info.elevenlabs || !info.voices.length) {
-      picker.hidden = !speech.supported ? true : picker.hidden;
-      picker.title = "Set ELEVENLABS_API_KEY on the server for more voices";
+      // Distinguish "no key" from "the key is wrong" -- telling someone to set
+      // the key they just set is the least useful message available.
+      if (info.error) {
+        picker.title = `ElevenLabs unavailable: ${info.error}`;
+        const warn = document.createElement("span");
+        warn.className = "voice-error";
+        warn.textContent = "ElevenLabs: " + info.error;
+        picker.parentNode.insertBefore(warn, picker.nextSibling);
+      } else {
+        picker.title = "Set ELEVENLABS_API_KEY on the server for more voices";
+      }
       return;
     }
     for (const v of info.voices) {
@@ -828,6 +881,19 @@
     });
   }
 
+  // --- autoplay gate ---------------------------------------------------------
+  const gateEl = document.getElementById("gate");
+  let gated = true;          // nothing plays until the user has clicked once
+
+  function openGate() {
+    if (!gated) return;
+    gated = false;
+    gateEl.hidden = true;
+    hasPlayed = true;
+    setPlaying(true);
+  }
+  gateEl.addEventListener("click", openGate);
+
   // --- live feed ------------------------------------------------------------
   const statusEl = document.getElementById("status");
   const statusText = document.getElementById("statusText");
@@ -852,12 +918,14 @@
         if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);   // board size is the server's call
         // hello is a FULL state sync, and arrives again on every reconnect.
         // Appending here would duplicate the whole lesson and speak it twice.
-        replaceOps(msg.ops || "");
+        // Catch up only if we have already been watching.
+        replaceOps(msg.ops || "", hasPlayed);
       } else if (msg.type === "ops") {
         appendOps(msg.ops);
       } else if (msg.type === "reset") {
         // The agent undid a scene; drop everything and replay the survivors.
-        replaceOps(msg.ops);
+        if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);
+        replaceOps(msg.ops, true);
       } else if (msg.type === "closed") {
         setStatus("off", "lesson ended");
       }
