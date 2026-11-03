@@ -393,6 +393,17 @@
     return fresh.length;
   }
 
+  /** Replace the whole lesson with this op stream. */
+  function replaceOps(src) {
+    ops.length = 0; starts.length = 0; total = 0; time = 0;
+    speech.stop();
+    speech.spokenIdx = -1;
+    renderLog();
+    if (src) appendOps(src);
+    time = total;
+    paint();
+  }
+
   /** Rebuild start times, e.g. once a line's real audio duration is known. */
   function recomputeTimeline() {
     const atHead = time >= total - 1;
@@ -592,9 +603,16 @@
       else this._remote(text, rate, op);
     },
 
+    /** Silence BOTH engines. Each start must call this, or switching engines
+     *  mid-lesson leaves the previous one talking over the new one. */
+    _silence() {
+      if (this.supported) window.speechSynthesis.cancel();
+      this._stopAudio();
+    },
+
     _browser(text, rate) {
       if (!this.supported) return;
-      window.speechSynthesis.cancel();
+      this._silence();
       const u = new SpeechSynthesisUtterance(text);
       if (this.voice) u.voice = this.voice;
       // Clamp: above ~3 the synth garbles, and 4x playback would ask for more.
@@ -608,7 +626,7 @@
     },
 
     _remote(text, rate, op) {
-      this._stopAudio();
+      this._silence();
       const el = new Audio(this.url(text));
       el.playbackRate = Math.max(0.5, Math.min(3, rate));
       el.addEventListener("loadedmetadata", () => {
@@ -617,9 +635,17 @@
           recomputeTimeline();
         }
       });
-      // A failed fetch should not leave the lesson silent.
-      el.addEventListener("error", () => this._browser(text, rate));
-      el.play().catch(() => this._browser(text, rate));
+
+      // A failed fetch should not leave the lesson silent -- but `error` and a
+      // rejected play() can both fire for one failure, so fall back only once.
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack || this.audio !== el) return;
+        fellBack = true;
+        this._browser(text, rate);
+      };
+      el.addEventListener("error", fallback);
+      el.play().catch(fallback);
       this.audio = el;
     },
 
@@ -653,8 +679,7 @@
     },
 
     stop() {
-      if (this.supported) window.speechSynthesis.cancel();
-      this._stopAudio();
+      this._silence();
       this.spokenIdx = -1;
     },
   };
@@ -698,14 +723,26 @@
     syncLog(time);
   }
 
+  let rafPending = false;
+
   function frame(now) {
+    rafPending = false;
     if (!playing) return;
     const dt = Math.min(100, now - last); last = now;
     time += dt * speed;
     // At the live head we idle rather than stop -- more ops may still arrive.
     if (time >= total) { time = total; playing = false; playBtn.textContent = "Play"; speech.stop(); }
     paint();
-    if (playing) requestAnimationFrame(frame);
+    if (playing) pump();
+  }
+
+  /** Ask for exactly one animation frame. Live ops arrive in bursts, and a
+   *  naive requestAnimationFrame per burst stacks loops that each advance the
+   *  clock, so playback races ahead. */
+  function pump() {
+    if (rafPending || !playing) return;
+    rafPending = true;
+    requestAnimationFrame(frame);
   }
 
   function setPlaying(on) {
@@ -713,9 +750,11 @@
     playBtn.textContent = on ? "Pause" : "Play";
     if (!on) speech.stop();
     if (on) {
-      if (time >= total) time = 0;
+      // Restart from the top only when replaying a finished lesson, never when
+      // sitting at the live head waiting for the agent's next scene.
+      if (!following && time >= total) time = 0;
       last = performance.now();
-      requestAnimationFrame(frame);
+      pump();
     }
   }
 
@@ -762,6 +801,9 @@
     }
     if (info.default) {
       picker.value = info.default;
+      // /voices resolves after playback may already have begun on the browser
+      // voice. Silence it, or the next line starts on top of it.
+      speech.stop();
       speech.engine = info.default;
     }
   }).catch(() => { /* no server voices; browser speech still works */ });
@@ -808,15 +850,14 @@
       if (msg.type === "hello") {
         topicEl.textContent = msg.topic || "Untitled lesson";
         if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);   // board size is the server's call
-        if (msg.ops) appendOps(msg.ops);
+        // hello is a FULL state sync, and arrives again on every reconnect.
+        // Appending here would duplicate the whole lesson and speak it twice.
+        replaceOps(msg.ops || "");
       } else if (msg.type === "ops") {
         appendOps(msg.ops);
       } else if (msg.type === "reset") {
         // The agent undid a scene; drop everything and replay the survivors.
-        ops.length = 0; starts.length = 0; total = 0; time = 0;
-        speech.stop(); renderLog();
-        if (msg.ops) appendOps(msg.ops);
-        time = total; paint();
+        replaceOps(msg.ops);
       } else if (msg.type === "closed") {
         setStatus("off", "lesson ended");
       }
