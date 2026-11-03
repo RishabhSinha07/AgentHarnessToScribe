@@ -16,11 +16,12 @@ from pathlib import Path
 
 import uvicorn
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .session import REGISTRY, set_broadcast_loop
+from .voice import VOICE
 
 VIEWER = Path(__file__).parent / "viewer" / "index.html"
 
@@ -41,6 +42,46 @@ async def _health(request):
     )
 
 
+async def _voices(request):
+    """What the viewer offers in its voice picker.
+
+    `browser` is always available; ElevenLabs appears only when a key is set.
+    """
+    if not VOICE.available:
+        return JSONResponse({"elevenlabs": False, "voices": []})
+    try:
+        voices = await VOICE.list_voices()
+    except Exception as exc:  # noqa: BLE001 - a bad key must not break the board
+        return JSONResponse({"elevenlabs": False, "error": str(exc), "voices": []})
+    return JSONResponse(
+        {
+            "elevenlabs": True,
+            "default": VOICE.default_voice,
+            "voices": voices,
+        }
+    )
+
+
+async def _tts(request):
+    """Render one line of narration. The API key never leaves this process."""
+    text = (request.query_params.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": "no text"}, status_code=400)
+    if not VOICE.available:
+        return JSONResponse({"error": "no ELEVENLABS_API_KEY set"}, status_code=503)
+
+    try:
+        audio = await VOICE.synthesize(text, request.query_params.get("voice"))
+    except Exception as exc:  # noqa: BLE001 - viewer falls back to browser speech
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    return Response(
+        audio,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 async def _ws(websocket: WebSocket) -> None:
     await websocket.accept()
 
@@ -57,6 +98,7 @@ async def _ws(websocket: WebSocket) -> None:
             {
                 "type": "hello",
                 "topic": session.topic,
+                "grid": [session.canvas.grid_w, session.canvas.grid_h],
                 "ops": "\n".join(session.ops),
             }
         )
@@ -96,6 +138,8 @@ app = Starlette(
     routes=[
         Route("/", _index),
         Route("/health", _health),
+        Route("/voices", _voices),
+        Route("/tts", _tts),
         WebSocketRoute("/ws", _ws),
     ]
 )

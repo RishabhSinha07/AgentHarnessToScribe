@@ -16,8 +16,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-GRID_W, GRID_H = 40, 30
-CELL = 26  # pixels per grid cell -> 1040 x 780
+# Default board. 16:9 so it fills a browser window instead of letterboxing,
+# and roughly twice the area of the old 40x30 -- a lesson should be able to
+# run to the end without wiping to make room.
+GRID_W, GRID_H = 64, 36
+CELL = 24  # pixels per grid cell -> 1536 x 864
 INK = (28, 28, 32)
 PAPER = (252, 251, 247)
 ACCENT = (198, 60, 48)
@@ -60,6 +63,9 @@ USAGE: dict[str, str] = {
     "box": 'box x,y,w,h <label>         e.g.  box 5,7 3,2.5 "Client"',
     "ellipse": 'ellipse x,y,rx,ry <label>   e.g.  ellipse 18,11 2,1.5 "h2"',
     "arrow": 'arrow x1,y1 x2,y2 <label>   e.g.  arrow 11,7 15,7 "GET /x"',
+    "highlight": (
+        'highlight "<label>" <spoken note>   e.g.  highlight "LOAD BALANCER" "this one here"'
+    ),
     "circle": 'circle x,y,r <spoken note>  e.g.  circle 18.5,11.25 3 "this one"',
     "stroke": "stroke x1,y1 x2,y2 ...      e.g.  stroke 2,20 38,20",
     "erase": "erase x,y,w,h <note>  OR  erase x,y,r <note>",
@@ -116,6 +122,8 @@ class Canvas:
     """Stateful whiteboard. Ops mutate it; `render` snapshots it."""
 
     seed: int = 7
+    grid_w: int = GRID_W
+    grid_h: int = GRID_H
     _img: Image.Image = field(init=False)
     _draw: ImageDraw.ImageDraw = field(init=False)
     _rng: random.Random = field(init=False)
@@ -128,7 +136,7 @@ class Canvas:
     pen: tuple[int, int, int] = INK
 
     def __post_init__(self) -> None:
-        self._img = Image.new("RGB", (GRID_W * CELL, GRID_H * CELL), PAPER)
+        self._img = Image.new("RGB", (self.grid_w * CELL, self.grid_h * CELL), PAPER)
         self._draw = ImageDraw.Draw(self._img)
         self._rng = random.Random(self.seed)
 
@@ -245,6 +253,53 @@ class Canvas:
         if label:
             self.text(x, y, label, center=True, _log=False)
 
+    def find(self, label: str) -> Element | None:
+        """The most recent live element with this label. Exact match wins."""
+        live = self.live
+        for e in reversed(live):
+            if e.label == label:
+                return e
+        needle = label.casefold()
+        for e in reversed(live):
+            if e.label and needle in e.label.casefold():
+                return e
+        return None
+
+    def highlight(self, label: str, note: str = "", pad: float = 0.9) -> None:
+        """Ring the element with this label, sized from its own bounding box.
+
+        This is how pointing should work. `circle` makes the caller guess a
+        radius for a box whose size it cannot see, and the guess is usually
+        wrong -- too small and it cuts the label, too big and it swallows the
+        neighbours.
+        """
+        target = self.find(label)
+        if target is None:
+            known = [e.label for e in self.live if e.label]
+            self.errors.append(
+                f"highlight: nothing labelled {label!r} on the board. "
+                f"Labelled elements: {known or 'none'}"
+            )
+            return
+
+        cx = (target.x0 + target.x1) / 2
+        cy = (target.y0 + target.y1) / 2
+        rx = (target.x1 - target.x0) / 2 + pad
+        ry = (target.y1 - target.y0) / 2 + pad
+        self._ring(cx, cy, rx, ry)
+        self._add("highlight", label, cx - rx, cy - ry, cx + rx, cy + ry, transparent=True)
+        if note:
+            self.narration.append(note)
+
+    def _ring(self, cx, cy, rx, ry, color=ACCENT) -> None:
+        pts = [
+            (cx + rx * math.cos(t * math.pi / 8), cy + ry * math.sin(t * math.pi / 8))
+            for t in range(17)
+        ]
+        px = [self._px(*p) for p in pts]
+        for a, b in itertools.pairwise(px):
+            self._rough_line(a, b, width=3, color=color)
+
     def circle(self, x, y, r, color=ACCENT, note: str = "") -> None:
         pts = [
             (x + r * math.cos(t * math.pi / 8) * 1.12, y + r * math.sin(t * math.pi / 8) * 0.9)
@@ -253,6 +308,22 @@ class Canvas:
         px = [self._px(*p) for p in pts]
         for a, b in itertools.pairwise(px):
             self._rough_line(a, b, width=3, color=color)
+        ring = Element("circle", note, x - r * 1.12, y - r * 0.9, x + r * 1.12, y + r * 0.9)
+        for other in self.live:
+            if not other.solid or not ring.overlaps(other):
+                continue
+            encloses = (
+                ring.x0 <= other.x0
+                and ring.x1 >= other.x1
+                and ring.y0 <= other.y0
+                and ring.y1 >= other.y1
+            )
+            if not encloses:
+                self.collisions.append(
+                    f"circle ({x:g},{y:g}) r={r:g} cuts across {other.describe()} "
+                    f"instead of enclosing it -- use `highlight {other.label!r}` "
+                    f"and the ring will be sized for you"
+                )
         self._add(
             "circle", note, x - r * 1.12, y - r * 0.9, x + r * 1.12, y + r * 0.9, transparent=True
         )
@@ -304,10 +375,10 @@ class Canvas:
         """Roughly how much of the page carries ink, 0..1 -- a fullness signal."""
         cells = set()
         for e in self.live:
-            for gx in range(max(0, int(e.x0)), min(GRID_W, int(e.x1) + 1)):
-                for gy in range(max(0, int(e.y0)), min(GRID_H, int(e.y1) + 1)):
+            for gx in range(max(0, int(e.x0)), min(self.grid_w, int(e.x1) + 1)):
+                for gy in range(max(0, int(e.y0)), min(self.grid_h, int(e.y1) + 1)):
                     cells.add((gx, gy))
-        return len(cells) / (GRID_W * GRID_H)
+        return len(cells) / (self.grid_w * self.grid_h)
 
     def say(self, s: str) -> None:
         self.narration.append(s)
@@ -362,6 +433,8 @@ class Canvas:
             elif cmd == "text":
                 (x, y), used = take(2)
                 self.text(x, y, label_after(used))
+            elif cmd == "highlight":
+                self.highlight(args[0] if args else "", label_after(1))
             elif cmd == "ellipse":
                 (x, y, rx, ry), used = take(4)
                 self.ellipse(x, y, rx, ry, label_after(used))
@@ -418,7 +491,7 @@ class Canvas:
         live = self.live
         out = [
             (
-                f"Page {self.page} of a {GRID_W}x{GRID_H} grid. "
+                f"Page {self.page} of a {self.grid_w}x{self.grid_h} grid. "
                 f"{len(live)} elements, {self.occupancy:.0%} full."
             ),
         ]

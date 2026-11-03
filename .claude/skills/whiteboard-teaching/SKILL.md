@@ -30,11 +30,15 @@ box    17,5 3,2.5 "h1"
 say    "On the left, your inputs."
 stroke 8,8.25 17,6.25
 say    "Every input connects to every hidden unit. That's the mesh."
-circle 18.5,11.25 3 "Circling h2 here — this is the one we'll open up."
+highlight "h1" "Circling this one — it's where the work happens."
 ```
 
-- **Point at things.** When you refer to something, `circle` it. The note is
-  spoken aloud as the gesture is drawn, so the pointer explains itself.
+- **Point at things.** When you refer to something, `highlight "<its label>"`.
+  The note is spoken aloud as the ring is drawn, so the pointer explains itself.
+- **Never guess a radius.** `circle x,y,r` exists for pointing at empty space.
+  For anything with a label, use `highlight` — you cannot see how wide a box
+  rendered, and a guessed ring either slices through the text or swallows the
+  neighbours. The report will tell you when you have done this.
 - **Narrate in speech, not prose.** `say` lines are read out. Write how you
   would talk, not how you would write.
 - **Let the shape carry the idea.** Branching, ordering, nesting, feedback. A
@@ -58,6 +62,7 @@ continuing — do not push on and hope.
 | `COLLISIONS` | `erase` the offender and redraw it somewhere clear |
 | `ERRORS` | The op did not draw at all. The message gives the correct form |
 | `label 'x' needs ~N units` | The box is too narrow for its label. Widen it |
+| `circle ... cuts across` | Use `highlight "<label>"` instead of a guessed radius |
 | `page is filling up` | Erase a finished region, or start a new `page` |
 
 `scribe_look()` costs an image; the report is free. Reach for the picture when
@@ -75,7 +80,7 @@ the text says something is wrong, or to check the final composition.
 
 ## Laying things out
 
-The grid is 40 wide × 30 tall. Text is about **0.5 grid units per character**,
+The board is 64 wide × 36 tall. Text is about **0.5 grid units per character**,
 so `"Request Queue"` needs ~7 units of width.
 
 - Left-to-right for pipelines, top-to-bottom for hierarchies.

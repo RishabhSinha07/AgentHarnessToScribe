@@ -57,13 +57,20 @@
   .board { position:relative; background:var(--paper); }
   canvas { display:block; width:100%; height:auto; }
 
-  .caption { min-height:74px; display:flex; align-items:center; gap:14px;
-    padding:16px 22px; border-top:1px solid var(--rule); background:var(--surface); }
-  .caption-dot { width:8px; height:8px; border-radius:50%; background:var(--accent);
-    flex:none; opacity:0; transition:opacity .25s; }
-  .caption.speaking .caption-dot { opacity:1; }
-  .caption-text { font-size:19px; line-height:1.45; color:var(--ink); text-wrap:pretty; }
-  .caption-text.idle { color:var(--muted); font-style:italic; }
+  /* Narration floats over the board and fades when nothing is being said,
+     so it costs no permanent vertical space. */
+  .board { position:relative; }
+  .subtitle {
+    position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+    max-width:min(80%, 70ch); padding:9px 18px; border-radius:999px;
+    background:rgba(20,22,26,.82); color:#F4F5F7;
+    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.4;
+    text-align:center; text-wrap:pretty; pointer-events:none;
+    opacity:0; transition:opacity .35s ease;
+  }
+  .subtitle.on { opacity:1; }
+  .subtitle.gesture { background:rgba(46,125,91,.9); }
+  @media (prefers-reduced-motion: reduce) { .subtitle { transition:none; } }
 
   .controls { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     padding:14px 22px; border-top:1px solid var(--rule); background:var(--sunken); }
@@ -82,7 +89,10 @@
     color:var(--accent); }
   .voice-btn[aria-pressed="true"] { background:var(--good-dim); border-color:var(--good); color:var(--good); }
   .voice-btn[hidden] { display:none; }
-  .caption-dot.gesture { background:var(--good); }
+  .voice-picker { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    padding:8px 10px; border-radius:7px; border:1px solid var(--rule);
+    background:var(--surface); color:var(--ink); cursor:pointer; max-width:190px; }
+  .voice-picker[hidden] { display:none; }
 
   .oplog { max-height:150px; overflow-y:auto; padding:12px 22px 16px;
     border-top:1px solid var(--rule); background:var(--surface);
@@ -142,10 +152,9 @@
   </div>
 
   <div class="stage">
-    <div class="board"><canvas id="board" width="1040" height="780"></canvas></div>
-    <div class="caption" id="caption">
-      <span class="caption-dot"></span>
-      <span class="caption-text idle" id="captionText">Waiting for the first stroke.</span>
+    <div class="board">
+      <canvas id="board" width="1536" height="864"></canvas>
+      <div class="subtitle" id="caption"><span id="captionText"></span></div>
     </div>
     <div class="controls">
       <button class="primary" id="play">Pause</button>
@@ -154,6 +163,9 @@
       <span class="clock" id="clock">0:00 / 0:00</span>
       <button id="follow" aria-pressed="true">Following</button>
       <button id="voice" aria-pressed="true" class="voice-btn">Voice on</button>
+      <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
+        <option value="browser">Browser voice</option>
+      </select>
       <span class="speed">
         <button data-speed="0.5">0.5&times;</button>
         <button data-speed="1" aria-pressed="true">1&times;</button>
@@ -168,7 +180,8 @@
 (() => {
   "use strict";
 
-  const GRID_W = 40, GRID_H = 30, CELL = 26;
+  let GRID_W = 64, GRID_H = 36;
+  const CELL = 24;
   const PAPER = "#FCFBF7", PEN = "#1C1C20", ACCENT = "#C63C30";
   const PENS = { ink:PEN, red:ACCENT, blue:"#2A56A8", green:"#2E7D5B",
                  grey:"#808895", gray:"#808895" };
@@ -180,9 +193,15 @@
 
   // Back the canvas at device resolution so strokes and handwriting stay crisp,
   // while every draw call below keeps working in logical 1040x780 space.
-  const W = GRID_W * CELL, H = GRID_H * CELL;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  cv.width = W * dpr; cv.height = H * dpr;
+  let W = GRID_W * CELL, H = GRID_H * CELL;
+
+  function sizeBoard(gw, gh) {
+    GRID_W = gw; GRID_H = gh;
+    W = GRID_W * CELL; H = GRID_H * CELL;
+    cv.width = W * dpr; cv.height = H * dpr;
+  }
+  sizeBoard(GRID_W, GRID_H);
 
   // --- deterministic jitter -------------------------------------------------
   // Seeded per (op, call) so a line lands identically on every redraw and the
@@ -247,6 +266,7 @@
 
   // --- solid boxes placed so far this pass, for dodging labels --------------
   let solids = [];
+  let labelled = new Map();   // label -> [x0,y0,x1,y1], for `highlight`
   const textBox = (x, y, s, size, center) => {
     const w = s.length * CHAR_W * (size / 20), h = LINE_H * (size / 20);
     const x0 = center ? x - w / 2 : x;
@@ -302,6 +322,8 @@
         ops.push({ cmd, x1, y1, x2, y2, label: label(u), raw: line });
       } else if (cmd === "text") {
         const [[x, y], u] = take(2); ops.push({ cmd, x, y, s: label(u), raw: line });
+      } else if (cmd === "highlight") {
+        ops.push({ cmd, target: args[0] || "", note: args.slice(1).join(" ").trim(), raw: line });
       } else if (cmd === "ellipse") {
         const [[x, y, rx, ry], u] = take(4);
         ops.push({ cmd, x, y, rx, ry, label: label(u), raw: line });
@@ -342,6 +364,7 @@
       case "say":    return spoken(op.s.length);
       // A gesture carrying a note has to stay on screen long enough to say it,
       // or the next line cuts the voice off mid-sentence.
+      case "highlight": return op.note ? Math.max(820, spoken(op.note.length)) : 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
       case "page":   return 900;
@@ -369,6 +392,7 @@
     ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
     pen = PEN;        // pen state is rebuilt from the op stream each pass
     solids = [];
+    labelled = new Map();
 
     let speaking = null;   // { text, idx, gesture }
     for (let i = 0; i < ops.length; i++) {
@@ -382,6 +406,7 @@
           const { x, y, w, h } = op;
           polyline([[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]], t);
           solids.push([x, y, x + w, y + h]);
+          if (op.label) labelled.set(op.label, [x, y, x + w, y + h]);
           if (op.label && t > 0.75) drawText(x + w/2, y + h/2, op.label, 20, true, (t-0.75)/0.25);
           break;
         }
@@ -398,7 +423,26 @@
         case "text":
           drawText(op.x, op.y, op.s, 20, false, t);
           solids.push(textBox(op.x, op.y, op.s, 20, false));
+          labelled.set(op.s, textBox(op.x, op.y, op.s, 20, false));
           break;
+        case "highlight": {
+          // The ring is sized from the target's own box, never guessed.
+          const box = labelled.get(op.target)
+            || [...labelled.entries()].reverse()
+                 .find(([k]) => k.toLowerCase().includes(op.target.toLowerCase()))?.[1];
+          if (box) {
+            const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+            const rx = (box[2] - box[0]) / 2 + 0.9, ry = (box[3] - box[1]) / 2 + 0.9;
+            const pts = [];
+            for (let k = 0; k <= 16; k++) {
+              const th = k * Math.PI / 8;
+              pts.push([cx + rx * Math.cos(th), cy + ry * Math.sin(th)]);
+            }
+            polyline(pts, t, 3, ACCENT);
+          }
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
         case "pen": pen = PENS[op.name] || PEN; break;
         case "page":
           // Wipe to a clean page, then drop any solids from the old one.
@@ -414,6 +458,7 @@
           }
           polyline(pts, t);
           solids.push([op.x - op.rx, op.y - op.ry, op.x + op.rx, op.y + op.ry]);
+          if (op.label) labelled.set(op.label, [op.x - op.rx, op.y - op.ry, op.x + op.rx, op.y + op.ry]);
           if (op.label && t > 0.75) drawText(op.x, op.y, op.label, 20, true, (t - 0.75) / 0.25);
           break;
         }
@@ -445,6 +490,16 @@
       }
     }
     return speaking;
+  }
+
+  /** The next line that will be spoken after op `idx`, for prefetching. */
+  function nextSpoken(idx) {
+    for (let i = idx + 1; i < ops.length; i++) {
+      const o = ops[i];
+      if (o.cmd === "say") return o.s;
+      if (o.note) return o.note;
+    }
+    return null;
   }
 
   // --- last spoken line, for when playback sits between `say` ops -----------
@@ -509,9 +564,21 @@
       this.voice = all.find(v => v.localService) || all[0];
     },
 
+    // engine is "browser" or an ElevenLabs voice id.
+    engine: "browser",
+    audio: null,
+    cache: new Map(),
+
     say(text, idx, rate) {
-      if (!this.supported || !this.enabled) return;
+      if (!this.enabled) return;
       if (idx === this.spokenIdx) return;      // already speaking this line
+      this.spokenIdx = idx;
+      if (this.engine === "browser") this._browser(text, rate);
+      else this._remote(text, rate);
+    },
+
+    _browser(text, rate) {
+      if (!this.supported) return;
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       if (this.voice) u.voice = this.voice;
@@ -519,11 +586,40 @@
       u.rate = Math.max(0.5, Math.min(3, rate));
       u.pitch = 1;
       window.speechSynthesis.speak(u);
-      this.spokenIdx = idx;
+    },
+
+    url(text) {
+      return `/tts?voice=${encodeURIComponent(this.engine)}&text=${encodeURIComponent(text)}`;
+    },
+
+    _remote(text, rate) {
+      this._stopAudio();
+      const el = new Audio(this.url(text));
+      el.playbackRate = Math.max(0.5, Math.min(3, rate));
+      // A failed fetch should not leave the lesson silent.
+      el.addEventListener("error", () => this._browser(text, rate));
+      el.play().catch(() => this._browser(text, rate));
+      this.audio = el;
+    },
+
+    /** Warm the cache for the next line, so the voice is not late. */
+    prefetch(text) {
+      if (this.engine === "browser" || !text || this.cache.has(text)) return;
+      this.cache.set(text, true);
+      fetch(this.url(text)).catch(() => {});
+    },
+
+    _stopAudio() {
+      if (this.audio) {
+        this.audio.pause();
+        this.audio.src = "";
+        this.audio = null;
+      }
     },
 
     stop() {
       if (this.supported) window.speechSynthesis.cancel();
+      this._stopAudio();
       this.spokenIdx = -1;
     },
   };
@@ -551,15 +647,16 @@
 
   function paint() {
     const speaking = renderAt(time);
-    const line = speaking ? speaking.text : lastSaid(time);
-    capEl.classList.toggle("speaking", !!speaking);
-    capEl.querySelector(".caption-dot").classList.toggle("gesture", !!speaking?.gesture);
-
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
-    if (speaking && playing) speech.say(speaking.text, speaking.idx, speed);
+    if (speaking && playing) {
+      speech.say(speaking.text, speaking.idx, speed);
+      speech.prefetch(nextSpoken(speaking.idx));
+    }
 
-    if (line) { capText.textContent = line; capText.classList.remove("idle"); }
-    else { capText.textContent = "Press play to watch and hear the lesson draw itself."; capText.classList.add("idle"); }
+    // The subtitle shows only while a line is actually being spoken.
+    capEl.classList.toggle("on", !!speaking);
+    capEl.classList.toggle("gesture", !!speaking?.gesture);
+    if (speaking) capText.textContent = speaking.text;
     clock.textContent = `${fmt(time)} / ${fmt(total)}`;
     scrub.value = String(total ? Math.round((time / total) * 1000) : 0);
     syncLog(time);
@@ -613,10 +710,35 @@
     });
   });
 
+  // Offer ElevenLabs voices when the server has a key; browser speech otherwise.
+  const picker = document.getElementById("voicePicker");
+  fetch("/voices").then(r => r.json()).then(info => {
+    if (!info.elevenlabs || !info.voices.length) {
+      picker.hidden = !speech.supported ? true : picker.hidden;
+      picker.title = "Set ELEVENLABS_API_KEY on the server for more voices";
+      return;
+    }
+    for (const v of info.voices) {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.textContent = v.name;
+      picker.appendChild(opt);
+    }
+    if (info.default) {
+      picker.value = info.default;
+      speech.engine = info.default;
+    }
+  }).catch(() => { /* no server voices; browser speech still works */ });
+
+  picker.addEventListener("change", () => {
+    speech.stop();
+    speech.cache.clear();
+    speech.engine = picker.value;
+    paint();
+  });
+
   const voiceBtn = document.getElementById("voice");
-  if (!speech.supported) {
-    voiceBtn.hidden = true;   // no synth in this browser; captions still carry the lesson
-  } else {
+  {
     voiceBtn.addEventListener("click", () => {
       speech.enabled = !speech.enabled;
       voiceBtn.setAttribute("aria-pressed", String(speech.enabled));
@@ -647,6 +769,7 @@
       const msg = JSON.parse(ev.data);
       if (msg.type === "hello") {
         topicEl.textContent = msg.topic || "Untitled lesson";
+        if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);   // board size is the server's call
         if (msg.ops) appendOps(msg.ops);
       } else if (msg.type === "ops") {
         appendOps(msg.ops);

@@ -92,9 +92,20 @@ def test_page_starts_clean_but_keeps_history():
 def test_occupancy_grows_and_warns():
     c = Canvas()
     assert c.occupancy == 0
-    c.run("\n".join(f"box {x},{y} 4,3" for x in range(0, 36, 5) for y in range(0, 27, 4)))
+    # Tile the whole board, whatever size it is.
+    c.run(
+        "\n".join(
+            f"box {x},{y} 4,3" for x in range(0, c.grid_w - 4, 5) for y in range(0, c.grid_h - 3, 4)
+        )
+    )
     assert c.occupancy > 0.55
     assert "filling up" in c.state_summary()
+
+
+def test_grid_size_is_per_canvas():
+    small = Canvas(grid_w=40, grid_h=30)
+    assert "40x30" in small.state_summary()
+    assert Canvas().grid_w == 64
 
 
 def test_gesture_notes_become_narration():
@@ -132,3 +143,42 @@ def test_unknown_command_lists_the_known_ones():
     c.run("scribble 1 2")
     assert "Known commands" in c.errors[0]
     assert "ellipse" in c.errors[0]
+
+
+def test_highlight_sizes_the_ring_from_the_target():
+    """The agent should never have to guess a radius for a box it cannot see."""
+    c = Canvas()
+    c.run('box 24,15 14,6 "LOAD BALANCER"\nhighlight "LOAD BALANCER" "this one"')
+    assert not c.collisions and not c.errors
+    ring = next(e for e in c.live if e.kind == "highlight")
+    box = next(e for e in c.live if e.kind == "box")
+    assert ring.x0 < box.x0 and ring.x1 > box.x1
+    assert ring.y0 < box.y0 and ring.y1 > box.y1
+    assert c.narration == ["this one"]
+
+
+def test_highlight_matches_on_a_substring():
+    c = Canvas()
+    c.run('box 2,2 10,3 "SERVER 1"\nhighlight "SERVER"')
+    assert not c.errors
+
+
+def test_highlight_of_a_missing_label_lists_what_exists():
+    c = Canvas()
+    c.run('box 2,2 6,3 "real"\nhighlight "imaginary"')
+    assert "nothing labelled" in c.errors[0]
+    assert "real" in c.errors[0]
+
+
+def test_circle_that_cuts_across_a_box_is_flagged():
+    """The screenshot bug: a guessed radius slicing through the thing it means."""
+    c = Canvas()
+    c.run('box 24,15 14,6 "LOAD BALANCER"\ncircle 31,18 5')
+    assert c.collisions
+    assert "highlight" in c.collisions[0]
+
+
+def test_circle_that_properly_encloses_is_not_flagged():
+    c = Canvas()
+    c.run('box 28,16 4,2 "small"\ncircle 30,17 6')
+    assert not c.collisions

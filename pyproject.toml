@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Rishabh" }]
 keywords = ["mcp", "agent", "whiteboard", "teaching", "diagram"]
 dependencies = [
+    "httpx>=0.28.1",
     "mcp>=2.0",
     "pillow>=10.0",
     "starlette>=0.37",

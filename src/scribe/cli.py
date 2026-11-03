@@ -16,11 +16,22 @@ def serve() -> None:
     ap.add_argument("ops", nargs="?", type=Path, help="An .ops file to play.")
     ap.add_argument("--topic", default="Scribe demo")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument(
+        "--grid", default="", metavar="WxH", help="Board size, e.g. 40x30. Defaults to 64x36."
+    )
     args = ap.parse_args()
+
+    grid: tuple[int, int] | None = None
+    if args.grid:
+        try:
+            w, h = (int(v) for v in args.grid.lower().split("x"))
+            grid = (w, h)
+        except ValueError:
+            ap.error(f"--grid wants WxH, e.g. 40x30 (got {args.grid!r})")
 
     SERVER.port = args.port
     url = SERVER.start()
-    session = REGISTRY.open(args.topic)
+    session = REGISTRY.open(args.topic, *(grid or (None, None)))
     print(f"Watch at: {url}/?s={session.sid}", flush=True)
 
     if args.ops:

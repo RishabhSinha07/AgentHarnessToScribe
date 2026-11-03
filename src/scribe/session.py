@@ -129,8 +129,9 @@ class Registry:
         self._sessions: dict[str, Session] = {}
         self.current: Session | None = None
 
-    def open(self, topic: str) -> Session:
-        s = Session(topic=topic)
+    def open(self, topic: str, grid_w: int | None = None, grid_h: int | None = None) -> Session:
+        canvas = Canvas(grid_w=grid_w, grid_h=grid_h) if grid_w and grid_h else Canvas()
+        s = Session(topic=topic, canvas=canvas)
         self._sessions[s.sid] = s
         self.current = s
         return s

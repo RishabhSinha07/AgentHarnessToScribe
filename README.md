@@ -38,10 +38,31 @@ while drawing it. Nothing in Mermaid can gesture.
 
 ```bash
 uv sync
-uv run scribe-serve examples/neural_network.ops
+uv run scribe-serve examples/neural_network.ops --grid 40x30
 ```
 
 Open the URL it prints. The lesson draws itself.
+
+### Narration
+
+Out of the box the board narrates itself with the browser's built-in speech —
+no key, no network. For a better voice, set an ElevenLabs key before starting:
+
+```bash
+export ELEVENLABS_API_KEY=sk_...
+uv run scribe-serve examples/neural_network.ops --grid 40x30
+```
+
+A voice picker appears in the controls and the board speaks through ElevenLabs.
+**The key stays on the server** — the viewer asks this process for audio and
+never sees the credential. If a request fails, it falls back to browser speech
+rather than going silent.
+
+| Variable | Default | |
+|---|---|---|
+| `ELEVENLABS_API_KEY` | *unset* | Without it, ElevenLabs is simply not offered |
+| `ELEVENLABS_VOICE_ID` | Sarah | Starting voice; switch live in the picker |
+| `ELEVENLABS_MODEL` | `eleven_turbo_v2_5` | Turbo keeps the voice up with the drawing |
 
 ### As an MCP server
 
@@ -56,15 +77,17 @@ Then ask Claude to teach you something at the whiteboard. It calls
 
 ## The drawing language
 
-One command per line. Coordinates are a 40 × 30 grid — coarse on purpose, since
-models reason about grid cells far better than pixels.
+One command per line. Coordinates are a 64 × 36 grid — coarse on purpose, since
+models reason about grid cells far better than pixels, and 16:9 so it fills a
+browser window.
 
 ```
 text    x,y <words>            write words
 box     x,y,w,h <label>        rectangle, label centred
 ellipse x,y,rx,ry <label>      oval in the current pen
 arrow   x1,y1 x2,y2 <label>    arrow, label auto-dodges collisions
-circle  x,y,r <spoken note>    RED highlight — the pointer
+highlight "<label>" <note>     RED ring, sized from the target's own box
+circle  x,y,r <spoken note>    RED ring at a chosen spot (empty space only)
 stroke  x1,y1 x2,y2 ...        freehand polyline
 erase   x,y,w,h <spoken note>  erase a rectangle
 pen     ink|red|blue|green|grey
@@ -80,11 +103,15 @@ box    5,7 3,2.5 "x1"
 box    17,5 3,2.5 "h1"
 stroke 8,8.25 17,6.25
 say    "Every input connects to every hidden unit. That's the mesh."
-circle 18.5,11.25 3 "Circling h2 here — this is the one we'll open up."
+highlight "h1" "Circling this one — it's where the work happens."
 ```
 
-The note on `circle` and `erase` is spoken aloud as the gesture happens, so the
-pointer explains itself.
+The note on `highlight`, `circle` and `erase` is spoken aloud as the gesture
+happens, so the pointer explains itself.
+
+**`highlight` never guesses.** The ring is sized from the target's own bounding
+box. A guessed `circle x,y,r` that slices through the thing it means gets
+flagged in the report, with the fix named.
 
 ---
 
@@ -117,6 +144,8 @@ spends an image on `scribe_look` when the text says something is wrong.
   rectangle would clip, since the eraser is blunt by design.
 - **The board opens itself**, and the server picks a free port rather than
   handing out a URL that never loads.
+- **Pointing is not guesswork.** `highlight "<label>"` sizes the ring from the
+  target's own box, because an agent cannot see how wide a box rendered.
 
 For Claude Code there is also a skill in `.claude/skills/whiteboard-teaching/`
 covering layout budgeting, when to point, and what to do about each kind of
@@ -142,6 +171,7 @@ thread so MCP keeps stdio to itself.
 | `live.py` | Starlette server; streams ops over WebSocket |
 | `mcp.py` | MCP adapter |
 | `viewer/index.html` | The board: progressive drawing, voice, scrubbing |
+| `voice.py` | Optional ElevenLabs narration, proxied so the key stays server-side |
 | `cli.py` | `scribe-serve`, for running without an MCP client |
 | `.claude/skills/` | The teaching skill, for Claude Code |
 

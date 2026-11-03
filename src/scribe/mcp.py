@@ -29,8 +29,8 @@ How to teach with it:
    that appears all at once is the failure mode this tool exists to fix.
 3. Interleave `say` with the drawing. Draw a thing, say what it is, draw the
    next thing. That ordering IS the teaching.
-4. Point. When you refer to something, `circle` it -- the note on the circle is
-   spoken aloud as the gesture happens.
+4. Point. When you refer to something, `highlight "<its label>"` -- the ring is
+   sized from the element's own box, and the note is spoken as it is drawn.
 5. READ THE REPORT from every scribe_draw. It names collisions and ops that
    failed. A collision means something is now unreadable: erase and redraw it
    before continuing. Do not push on and hope.
@@ -52,8 +52,12 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
   box     x,y,w,h <label>        rectangle, label centred inside
   ellipse x,y,rx,ry <label>      oval in the current pen
   arrow   x1,y1 x2,y2 <label>    arrow with a head at x2,y2
-  circle  x,y,r <spoken note>    RED highlight -- the pointer. The note is
-                                 spoken aloud as the circle is drawn.
+  highlight "<label>" <note>     RED ring around the element with that label,
+                                 sized from its own box. THIS is how you point.
+                                 The note is spoken as the ring is drawn.
+  circle  x,y,r <spoken note>    RED ring at a position you choose. Only for
+                                 pointing at empty space -- for anything with
+                                 a label, use `highlight` so the ring fits.
   stroke  x1,y1 x2,y2 ...        freehand polyline (underlines, braces, ticks)
   erase   x,y,w,h <spoken note>  erase a rectangle
   erase   x,y,r <spoken note>    erase a square of radius r
@@ -67,7 +71,9 @@ Writing a good lesson:
   point, speak -- that ordering IS the teaching.
 - Text is about 0.5 grid units per character. Make boxes wide enough for their
   labels; you will be told if one does not fit.
-- `circle` is how you point at something. Use it when you refer to a thing.
+- `highlight "<label>"` is how you point. Never guess a radius with `circle`
+  for something that has a label -- you cannot see how wide the box is, and the
+  ring will either cut through the text or swallow its neighbours.
 - Nothing solid may overlap anything else solid. Highlights and freehand are
   exempt -- they are meant to cross things.
 - When the page gets past ~55% full you will be warned. Erase a region you have
@@ -82,20 +88,28 @@ def scribe_reference() -> str:
 
 
 @mcp.tool()
-def scribe_open(topic: str, open_browser: bool = True) -> str:
+def scribe_open(
+    topic: str,
+    open_browser: bool = True,
+    grid_w: int = 0,
+    grid_h: int = 0,
+) -> str:
     """Open a new lesson, start the viewer, and show it to the user.
 
     Args:
         topic: What the lesson is about, shown above the board.
         open_browser: Pop the board up automatically. Set False on a headless
             machine, or when the user already has the board open.
+        grid_w: Board width in grid units. Leave at 0 for the default 64.
+        grid_h: Board height. Leave at 0 for the default 36. A taller board
+            suits a deep hierarchy; a wider one suits a long pipeline.
     """
     try:
         base = SERVER.start()
     except RuntimeError as exc:
         return f"Could not start the viewer: {exc}"
 
-    session = REGISTRY.open(topic)
+    session = REGISTRY.open(topic, grid_w or None, grid_h or None)
     url = f"{base}/?s={session.sid}"
     opened = SERVER.open_in_browser(f"/?s={session.sid}") if open_browser else False
 
