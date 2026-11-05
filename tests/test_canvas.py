@@ -258,3 +258,82 @@ def test_example_declares_the_board_it_was_written_for():
     assert (c.grid_w, c.grid_h) == (40, 30)
     assert not c.errors
     assert not c.collisions
+
+
+# --- richer primitives ------------------------------------------------------
+
+
+def test_connect_routes_between_labels_without_coordinates():
+    c = Canvas()
+    c.run('box 4,8 8,3 "a"\nbox 30,8 8,3 "b"\nconnect "a" "b" "flows to"')
+    assert not c.errors and not c.collisions
+    assert any(e.kind == "connect" for e in c.live)
+
+
+def test_connect_warns_when_it_crosses_a_third_element():
+    """A connector through another box is unreadable and the agent can't see it."""
+    c = Canvas()
+    c.run('box 4,8 6,3 "a"\nbox 20,8 6,3 "middle"\nbox 36,8 6,3 "b"\nconnect "a" "b"')
+    assert any("passes through" in m for m in c.collisions)
+
+
+def test_connect_reports_a_missing_endpoint():
+    c = Canvas()
+    c.run('box 4,8 6,3 "a"\nconnect "a" "ghost"')
+    assert any("nothing labelled 'ghost'" in e for e in c.errors)
+
+
+def test_fill_tints_a_shape_by_label():
+    c = Canvas()
+    c.run('box 4,8 8,3 "panel"\nfill "panel" blue')
+    assert not c.errors
+
+
+def test_fill_rejects_an_unknown_tint():
+    c = Canvas()
+    c.run('box 4,8 8,3 "panel"\nfill "panel" chartreuse')
+    assert any("unknown tint" in e for e in c.errors)
+
+
+def test_strike_crosses_out_by_label():
+    c = Canvas()
+    c.run('box 4,8 10,3 "wrong idea"\nstrike "wrong idea" "not how it works"')
+    assert not c.errors
+    assert c.narration == ["not how it works"]
+
+
+def test_every_icon_renders_without_error():
+    from scribe.canvas import ICONS
+
+    c = Canvas(grid_w=200, grid_h=20)
+    c.run("\n".join(f"icon {name} {6 + i * 10},10 5" for i, name in enumerate(ICONS)))
+    assert not c.errors
+
+
+def test_unknown_icon_lists_the_real_ones():
+    c = Canvas()
+    c.run("icon unicorn 10,10 4")
+    assert any("unknown 'unicorn'" in e for e in c.errors)
+    assert any("db" in e for e in c.errors)
+
+
+def test_group_does_not_collide_with_what_it_contains():
+    c = Canvas()
+    c.run('group 2,6 20,8 "a group"\nbox 5,9 8,3 "inside"')
+    assert not c.collisions
+
+
+def test_note_wraps_its_own_text():
+    c = Canvas()
+    c.run('note 3,20 14 "A long sticky note that must wrap onto several lines by itself."')
+    assert not c.errors
+    note = next(e for e in c.live if e.kind == "note")
+    assert note.y1 - note.y0 > 2  # grew to fit the wrapped lines
+
+
+def test_dash_applies_to_shapes_until_turned_off():
+    c = Canvas()
+    c.run("dash on")
+    assert c.dashed
+    c.run("dash off")
+    assert not c.dashed

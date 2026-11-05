@@ -103,7 +103,7 @@
   .voice-btn[hidden] { display:none; }
   .voice-picker { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
     padding:8px 10px; border-radius:7px; border:1px solid var(--rule);
-    background:var(--surface); color:var(--ink); cursor:pointer; max-width:190px; }
+    background:var(--surface); color:var(--ink); cursor:pointer; max-width:150px; }
   .voice-picker[hidden] { display:none; }
   .voice-error { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
     color:var(--accent); max-width:40ch; }
@@ -147,21 +147,43 @@
     font-family:Archivo,sans-serif; font-size:13px; color:var(--muted); }
   :focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
 
-  .wrap { padding:24px; }
-  .topline { display:flex; align-items:center; justify-content:space-between;
-    gap:16px; margin-bottom:14px; flex-wrap:wrap; }
-  .status { display:inline-flex; align-items:center; gap:8px;
-    font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
-    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
-  .status-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
-  .status.on .status-dot { background:var(--good); }
-  .status.off .status-dot { background:var(--accent); }
-  #follow[aria-pressed="true"] { background:var(--good-dim); border-color:var(--good); color:var(--good); }
+  .wrap { padding:20px 24px 28px; max-width:1240px; }
+  .topline { display:flex; align-items:baseline; justify-content:space-between;
+    gap:16px; margin-bottom:12px; flex-wrap:wrap; }
+  .topic { font-family:Archivo,sans-serif; font-size:19px; font-weight:600;
+    letter-spacing:-.01em; margin:0; color:var(--ink); }
+  .status { display:inline-flex; align-items:center; gap:7px;
+    font-family:Archivo,sans-serif; font-size:11px; font-weight:600;
+    letter-spacing:.11em; text-transform:uppercase; color:var(--muted); }
+  .status-dot { width:7px; height:7px; border-radius:50%; background:var(--muted);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--muted) 22%, transparent); }
+  .status.on .status-dot { background:var(--good);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
+  .status.off .status-dot { background:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+  /* The board is the page. Everything else should sit back. */
+  .stage { margin-top:0; border-radius:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.08), 0 18px 48px -16px rgba(0,0,0,.28); }
+  .board { border-bottom:1px solid var(--rule); }
+
+  .controls { gap:9px; padding:12px 16px; flex-wrap:nowrap; overflow-x:auto; }
+  button.ghost { background:transparent; border-color:transparent; color:var(--muted); }
+  button.ghost:hover { background:var(--surface); border-color:var(--rule); color:var(--ink); }
+  .spacer { flex:1 1 12px; }
+  #follow[aria-pressed="true"], .voice-btn[aria-pressed="true"] {
+    background:transparent; border-color:transparent; color:var(--good); }
+  #follow[aria-pressed="true"]:hover, .voice-btn[aria-pressed="true"]:hover {
+    background:var(--surface); border-color:var(--rule); }
+  #logToggle { font-family:"JetBrains Mono",monospace; font-size:13px; padding:8px 11px; }
+  #logToggle[aria-expanded="true"] { color:var(--accent); background:var(--surface);
+    border-color:var(--rule); }
+  .oplog[hidden] { display:none; }
 </style>
 
 <div class="wrap">
   <div class="topline">
-    <span class="eyebrow" id="topic">No lesson open</span>
+    <h1 class="topic" id="topic">No lesson open</h1>
     <span class="status" id="status"><span class="status-dot"></span><span id="statusText">connecting</span></span>
   </div>
 
@@ -177,22 +199,25 @@
     </div>
     <div class="controls">
       <button class="primary" id="play">Play</button>
-      <button id="restart">Replay</button>
+      <button id="restart" class="ghost">Replay</button>
       <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" aria-label="Scrub through the lesson">
       <span class="clock" id="clock">0:00 / 0:00</span>
-      <button id="follow" aria-pressed="true">Following</button>
-      <button id="voice" aria-pressed="true" class="voice-btn">Voice on</button>
-      <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
-        <option value="browser">Browser voice</option>
-      </select>
       <span class="speed">
         <button data-speed="0.5">0.5&times;</button>
         <button data-speed="1" aria-pressed="true">1&times;</button>
         <button data-speed="2">2&times;</button>
         <button data-speed="4">4&times;</button>
       </span>
+      <span class="spacer"></span>
+      <button id="follow" class="ghost" aria-pressed="true">Following</button>
+      <button id="voice" aria-pressed="true" class="voice-btn ghost">Voice on</button>
+      <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
+        <option value="browser">Browser voice</option>
+      </select>
+      <button id="logToggle" class="ghost" aria-expanded="false"
+              aria-controls="oplog" title="Show the drawing commands">&lt;/&gt;</button>
     </div>
-    <div class="oplog" id="oplog"></div>
+    <div class="oplog" id="oplog" hidden></div>
   </div>
 </div>
 <script>
@@ -205,6 +230,10 @@
   const PENS = { ink:PEN, red:ACCENT, blue:"#2A56A8", green:"#2E7D5B",
                  grey:"#808895", gray:"#808895" };
   const CHAR_W = 0.52, LINE_H = 1.05;   // grid units, matching canvas.py
+  const TINTS = { ink:"#E8E8EC", red:"#FAE6E4", blue:"#E4EDFC", green:"#E4F4EC",
+                  grey:"#EEF0F3", gray:"#EEF0F3", yellow:"#FCF5D8", none:PAPER };
+  const SHADOW = "#E0DED7";
+  let dashed = false;
   let pen = PEN;                         // current pen, reset each render pass
 
   const cv = document.getElementById("board");
@@ -246,6 +275,28 @@
     }
   }
 
+  function dashLine(a, b, width = 3, color = null, on = 9, off = 7, t = 1) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) * t;
+    if (len < 1) return;
+    const ux = dx / Math.hypot(dx, dy), uy = dy / Math.hypot(dx, dy);
+    ctx.strokeStyle = color || pen; ctx.lineWidth = width; ctx.lineCap = "butt";
+    for (let pos = 0; pos < len; pos += on + off) {
+      const end = Math.min(len, pos + on);
+      ctx.beginPath();
+      ctx.moveTo(a[0] + ux * pos, a[1] + uy * pos);
+      ctx.lineTo(a[0] + ux * end, a[1] + uy * end);
+      ctx.stroke();
+    }
+    ctx.lineCap = "round";
+  }
+
+  /** Honour the current dash state. Use for anything structural. */
+  function line(a, b, width = 3, color = null, t = 1) {
+    if (dashed) dashLine(a, b, width, color, 9, 7, t);
+    else roughLine(a, b, width, color, t);
+  }
+
   // Walk a polyline, consuming progress t across its total length.
   function polyline(pts, t, width = 3, color = null) {
     const segs = [];
@@ -254,6 +305,21 @@
       const a = px(...pts[i]), b = px(...pts[i + 1]);
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       segs.push([a, b, len]); total += len;
+    }
+    let want = total * t;
+    for (const [a, b, len] of segs) {
+      if (want <= 0) break;
+      line(a, b, width, color, Math.min(1, want / len));
+      want -= len;
+    }
+  }
+
+  /** Polyline in raw pixel space, for icon geometry. */
+  function polyPx(pts, t, width = 3, color = null) {
+    const segs = []; let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      segs.push([pts[i], pts[i + 1], len]); total += len;
     }
     let want = total * t;
     for (const [a, b, len] of segs) {
@@ -296,12 +362,187 @@
 
   // Converging arrows share a midpoint, so midpoint labels stack. Step
   // perpendicular until the slot is free; give up rather than wander far.
+  /** Find a labelled element's box, exact match then substring. */
+  function lookup(name) {
+    if (!name) return null;
+    if (labelled.has(name)) return labelled.get(name);
+    const hit = [...labelled.entries()].reverse()
+      .find(([k]) => k.toLowerCase().includes(name.toLowerCase()));
+    return hit ? hit[1] : null;
+  }
+  function labelOf(name) {
+    if (labelled.has(name)) return name;
+    const hit = [...labelled.entries()].reverse()
+      .find(([k]) => k.toLowerCase().includes(name.toLowerCase()));
+    return hit ? hit[0] : "";
+  }
+
+  /** Orthogonal route between two boxes -- mirrors canvas.py connect(). */
+  function elbow(a, b) {
+    const ax = (a[0]+a[2])/2, ay = (a[1]+a[3])/2;
+    const bx = (b[0]+b[2])/2, by = (b[1]+b[3])/2;
+    let pts;
+    if (Math.abs(bx - ax) >= Math.abs(by - ay)) {
+      const start = [bx > ax ? a[2] : a[0], ay], end = [bx > ax ? b[0] : b[2], by];
+      const mid = (start[0] + end[0]) / 2;
+      pts = [start, [mid, ay], [mid, by], end];
+    } else {
+      const start = [ax, by > ay ? a[3] : a[1]], end = [bx, by > ay ? b[1] : b[3]];
+      const mid = (start[1] + end[1]) / 2;
+      pts = [start, [ax, mid], [bx, mid], end];
+    }
+    return pts.filter((p, i) => i === 0 ||
+      Math.abs(p[0] - pts[i-1][0]) > 0.05 || Math.abs(p[1] - pts[i-1][1]) > 0.05);
+  }
+
+  function wrapText(text, width) {
+    const out = []; let cur = "";
+    for (const word of text.split(/\s+/)) {
+      const trial = (cur + " " + word).trim();
+      if (trial.length <= width || !cur) cur = trial;
+      else { out.push(cur); cur = word; }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
   function dodgeLabel(x, y, s, size) {
     for (const step of [0, -1.2, 1.2, -2.4, 2.4, -3.6, 3.6]) {
       const cand = textBox(x, y + step, s, size, true);
       if (!solids.some(o => hits(cand, o, 0.1))) return y + step;
     }
     return y;
+  }
+
+  // --- icons (mirrors canvas.py) ---------------------------------------------
+  const ICONS = ["db","server","user","cloud","queue","file","clock",
+                 "lock","globe","gear","warning","check","cross","box"];
+
+  function ellipsePts(cx, cy, rx, ry, a0 = 0, a1 = Math.PI * 2, steps = 16) {
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * i / steps;
+      out.push(px(cx + rx * Math.cos(a), cy + ry * Math.sin(a)));
+    }
+    return out;
+  }
+  const P = (x, y) => px(x, y);
+
+  function drawIcon(name, x, y, r, h, t) {
+    const poly = (pts, close = false, w = 3) =>
+      polyPx(close ? [...pts, pts[0]] : pts, t, w);
+
+    switch (name) {
+      case "db": {
+        const lid = h * 0.28;
+        poly(ellipsePts(x, y - h + lid, r, lid), true);
+        poly([P(x - r, y - h + lid), P(x - r, y + h - lid)]);
+        poly([P(x + r, y - h + lid), P(x + r, y + h - lid)]);
+        poly(ellipsePts(x, y + h - lid, r, lid, 0, Math.PI, 8));
+        poly(ellipsePts(x, y, r, lid, 0, Math.PI, 8));
+        break;
+      }
+      case "server":
+        for (let i = 0; i < 3; i++) {
+          const top = y - h + i * (2 * h / 3);
+          poly([P(x - r, top), P(x + r, top), P(x + r, top + 2 * h / 3 - 0.15),
+                P(x - r, top + 2 * h / 3 - 0.15)], true);
+          poly([P(x - r * 0.6, top + h / 3), P(x + r * 0.1, top + h / 3)], false, 2);
+        }
+        break;
+      case "user": {
+        const head = r * 0.46;
+        poly(ellipsePts(x, y - h + head * 1.3, head, head), true);
+        poly(ellipsePts(x, y + h, r, h * 0.8, Math.PI, Math.PI * 2, 14));
+        break;
+      }
+      case "cloud": {
+        // Union outline: skip points that fall inside another bump, or the
+        // hidden interior arcs make it read as a row of arches.
+        const base = y + h * 0.5;
+        const bumps = [[x - r * 0.48, r * 0.54, h * 0.6],
+                       [x + r * 0.06, r * 0.56, h * 0.92],
+                       [x + r * 0.58, r * 0.46, h * 0.58]];
+        const inside = (bx, by, skip) => bumps.some(([cx, rx, ry], j) =>
+          j !== skip && ((bx - cx) / rx) ** 2 + ((by - base) / ry) ** 2 < 0.97);
+        bumps.forEach(([cx, rx, ry], i) => {
+          let run = [];
+          for (let k = 0; k <= 40; k++) {
+            const a = Math.PI + Math.PI * k / 40;
+            const bx = cx + rx * Math.cos(a), by = base + ry * Math.sin(a);
+            if (inside(bx, by, i)) { if (run.length > 1) poly(run); run = []; }
+            else run.push(P(bx, by));
+          }
+          if (run.length > 1) poly(run);
+        });
+        poly([P(x - r, base), P(x + r, base)]);
+        break;
+      }
+      case "queue": {
+        poly([P(x - r, y - h * 0.55), P(x + r, y - h * 0.55)]);
+        poly([P(x - r, y + h * 0.55), P(x + r, y + h * 0.55)]);
+        const bw = r * 0.42;
+        for (let i = 0; i < 3; i++) {
+          const left = x - r * 0.85 + i * (bw + r * 0.26);
+          poly([P(left, y - h * 0.3), P(left + bw, y - h * 0.3),
+                P(left + bw, y + h * 0.3), P(left, y + h * 0.3)], true, 2);
+        }
+        break;
+      }
+      case "file": {
+        const fold = r * 0.5;
+        poly([P(x - r, y - h), P(x + r - fold, y - h), P(x + r, y - h + fold),
+              P(x + r, y + h), P(x - r, y + h)], true);
+        poly([P(x + r - fold, y - h), P(x + r - fold, y - h + fold), P(x + r, y - h + fold)]);
+        break;
+      }
+      case "clock":
+        poly(ellipsePts(x, y, r, h * 0.88), true);
+        poly([P(x, y), P(x, y - h * 0.5)], false, 2);
+        poly([P(x, y), P(x + r * 0.6, y + h * 0.18)], false, 2);
+        break;
+      case "lock": {
+        const bodyTop = y - h * 0.05, sr = r * 0.56;
+        poly([P(x - r, bodyTop), P(x + r, bodyTop), P(x + r, y + h), P(x - r, y + h)], true);
+        const shackle = [P(x - sr, bodyTop), P(x - sr, y - h * 0.45)];
+        for (let i = 0; i <= 10; i++) {
+          const a = Math.PI + Math.PI * i / 10;
+          shackle.push(P(x + sr * Math.cos(a), y - h * 0.45 + sr * 0.85 * Math.sin(a)));
+        }
+        shackle.push(P(x + sr, y - h * 0.45), P(x + sr, bodyTop));
+        poly(shackle);
+        poly([P(x, y + h * 0.3), P(x, y + h * 0.62)]);
+        break;
+      }
+      case "globe":
+        poly(ellipsePts(x, y, r, h * 0.88), true);
+        poly(ellipsePts(x, y, r * 0.42, h * 0.88), true);
+        poly([P(x - r, y), P(x + r, y)], false, 2);
+        break;
+      case "gear":
+        poly(ellipsePts(x, y, r * 0.72, h * 0.66), true);
+        poly(ellipsePts(x, y, r * 0.3, h * 0.28), true);
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4;
+          poly([P(x + r * 0.72 * Math.cos(a), y + h * 0.66 * Math.sin(a)),
+                P(x + r * Math.cos(a), y + h * 0.92 * Math.sin(a))], false, 2);
+        }
+        break;
+      case "warning":
+        poly([P(x, y - h), P(x + r, y + h * 0.8), P(x - r, y + h * 0.8)], true);
+        poly([P(x, y - h * 0.35), P(x, y + h * 0.25)]);
+        poly([P(x, y + h * 0.5), P(x, y + h * 0.58)]);
+        break;
+      case "check":
+        poly([P(x - r * 0.8, y), P(x - r * 0.15, y + h * 0.6), P(x + r * 0.9, y - h * 0.7)], false, 4);
+        break;
+      case "cross":
+        poly([P(x - r * 0.75, y - h * 0.7), P(x + r * 0.75, y + h * 0.7)], false, 4);
+        poly([P(x - r * 0.75, y + h * 0.7), P(x + r * 0.75, y - h * 0.7)], false, 4);
+        break;
+      default:
+        poly([P(x - r, y - h), P(x + r, y - h), P(x + r, y + h), P(x - r, y + h)], true);
+    }
   }
 
   // --- op parsing (mirrors canvas.py: accepts "3,4" or "3 4") ---------------
@@ -360,6 +601,36 @@
         }
       } else if (cmd === "pen") {
         ops.push({ cmd, name: (args[0] || "ink").toLowerCase(), raw: line });
+      } else if (cmd === "icon") {
+        const name = (args[0] || "").toLowerCase();
+        const nums = []; let used = 1;
+        for (const tok of args.slice(1)) {
+          if (nums.length >= 3) break;
+          const parts = String(tok).split(",").map(v => v.trim()).filter(Boolean);
+          if (!parts.every(v => !Number.isNaN(parseFloat(v)))) break;
+          parts.forEach(v => nums.push(parseFloat(v))); used++;
+        }
+        const [x, y] = nums;
+        const size = nums.length > 2 ? nums[2] : 4;
+        ops.push({ cmd, name, x, y, size, label: args.slice(used).join(" ").trim(), raw: line });
+      } else if (cmd === "connect") {
+        ops.push({ cmd, from: args[0] || "", to: args[1] || "",
+                   label: args.slice(2).join(" ").trim(), raw: line });
+      } else if (cmd === "fill") {
+        ops.push({ cmd, target: args[0] || "", tint: (args[1] || "yellow").toLowerCase(), raw: line });
+      } else if (cmd === "strike") {
+        ops.push({ cmd, target: args[0] || "", note: args.slice(1).join(" ").trim(), raw: line });
+      } else if (cmd === "group") {
+        const [[x, y, w, h], u] = take(4);
+        ops.push({ cmd, x, y, w, h, label: label(u), raw: line });
+      } else if (cmd === "note") {
+        const [[x, y, w], u] = take(3);
+        ops.push({ cmd, x, y, w, text: label(u), raw: line });
+      } else if (cmd === "brace") {
+        const [[x, y, h], u] = take(3);
+        ops.push({ cmd, x, y, h, label: label(u), raw: line });
+      } else if (cmd === "dash") {
+        ops.push({ cmd, on: !["off","false","0"].includes((args[0]||"on").toLowerCase()), raw: line });
       } else if (cmd === "board") {
         const [[w, h]] = take(2);
         ops.push({ cmd, w, h, raw: line });
@@ -396,6 +667,14 @@
       case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
+      case "icon":    return 820;
+      case "connect": return op.label ? 640 : 520;
+      case "fill":    return 420;
+      case "strike":  return op.note ? Math.max(560, spokenOp(op, op.note)) : 560;
+      case "group":   return 760;
+      case "note":    return 700;
+      case "brace":   return 520;
+      case "dash":    return 1;      // state change
       case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
       case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
@@ -448,7 +727,8 @@
   function renderAt(time) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
-    pen = PEN;        // pen state is rebuilt from the op stream each pass
+    pen = PEN;        // pen/dash state is rebuilt from the op stream each pass
+    dashed = false;
     solids = [];
     labelled = new Map();
 
@@ -502,6 +782,96 @@
           break;
         }
         case "pen": pen = PENS[op.name] || PEN; break;
+        case "dash": dashed = op.on; break;
+
+        case "icon": {
+          const r = op.size / 2, h = r * 1.15;
+          drawIcon(op.name, op.x, op.y, r, h, t);
+          const box = [op.x - r, op.y - h, op.x + r, op.y + h + (op.label ? 1.2 : 0)];
+          solids.push(box);
+          labelled.set(op.label || op.name, box);
+          if (op.label && t > 0.75) drawText(op.x, op.y + h + 0.7, op.label, 18, true, (t - 0.75) / 0.25);
+          break;
+        }
+
+        case "connect": {
+          const a = lookup(op.from), b = lookup(op.to);
+          if (a && b) {
+            const pts = elbow(a, b);
+            polyline(pts, t);
+            if (t >= 1) arrowHead(px(...pts[pts.length - 2]), px(...pts[pts.length - 1]), 1);
+            if (op.label && t > 0.7) {
+              const lx = (pts[0][0] + pts[pts.length - 1][0]) / 2;
+              const ly = (pts[0][1] + pts[pts.length - 1][1]) / 2;
+              drawText(lx, dodgeLabel(lx, ly - 0.7, op.label, 18), op.label, 18, true, (t - 0.7) / 0.3);
+            }
+          }
+          break;
+        }
+
+        case "fill": {
+          const box = lookup(op.target);
+          if (box) {
+            const a = px(box[0], box[1]), b = px(box[2], box[3]);
+            ctx.fillStyle = TINTS[op.tint] || TINTS.yellow;
+            // Wipe in, so the tint reads as a deliberate stroke of colour.
+            ctx.fillRect(a[0], a[1], (b[0] - a[0]) * t, b[1] - a[1]);
+            polyline([[box[0],box[1]],[box[2],box[1]],[box[2],box[3]],[box[0],box[3]],[box[0],box[1]]], 1);
+            const lbl = labelOf(op.target);
+            if (lbl) drawText((box[0]+box[2])/2, (box[1]+box[3])/2, lbl, 20, true, 1);
+          }
+          break;
+        }
+
+        case "strike": {
+          const box = lookup(op.target);
+          if (box) {
+            const pad = 0.3;
+            polyline([[box[0]-pad, box[1]-pad], [box[2]+pad, box[3]+pad]], t, 4, ACCENT);
+            polyline([[box[0]-pad, box[3]+pad], [box[2]+pad, box[1]-pad]], t, 4, ACCENT);
+          }
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
+
+        case "group": {
+          const was = dashed; dashed = true;
+          polyline([[op.x,op.y],[op.x+op.w,op.y],[op.x+op.w,op.y+op.h],
+                    [op.x,op.y+op.h],[op.x,op.y]], t, 2, PENS.grey);
+          dashed = was;
+          if (op.label && t > 0.6) {
+            const tw = op.label.length * CHAR_W + 0.8;
+            const a = px(op.x + 0.6, op.y - 0.55), b = px(op.x + 0.6 + tw, op.y + 0.55);
+            ctx.fillStyle = PAPER; ctx.fillRect(a[0], a[1], b[0]-a[0], b[1]-a[1]);
+            drawText(op.x + 1.0, op.y, op.label, 17, false, (t - 0.6) / 0.4);
+          }
+          break;
+        }
+
+        case "note": {
+          const lines = wrapText(op.text, Math.max(6, Math.floor(op.w / CHAR_W)));
+          const h = lines.length * LINE_H + 0.9;
+          const a = px(op.x, op.y), b = px(op.x + op.w, op.y + h);
+          ctx.fillStyle = SHADOW; ctx.fillRect(a[0]+5, a[1]+5, b[0]-a[0], b[1]-a[1]);
+          ctx.fillStyle = TINTS.yellow; ctx.fillRect(a[0], a[1], b[0]-a[0], b[1]-a[1]);
+          polyline([[op.x,op.y],[op.x+op.w,op.y],[op.x+op.w,op.y+h],
+                    [op.x,op.y+h],[op.x,op.y]], Math.min(1, t * 1.6), 2, PENS.grey);
+          lines.forEach((ln, k) => {
+            const lineT = Math.max(0, Math.min(1, (t - 0.25 - k * 0.12) / 0.4));
+            if (lineT > 0) drawText(op.x + 0.5, op.y + 0.7 + k * LINE_H, ln, 17, false, lineT);
+          });
+          solids.push([op.x, op.y, op.x + op.w, op.y + h]);
+          break;
+        }
+
+        case "brace": {
+          const mid = op.y + op.h / 2, d = 0.55;
+          polyline([[op.x,op.y],[op.x+d,op.y+0.35],[op.x+d,mid-0.6],
+                    [op.x+d*1.8,mid],[op.x+d,mid+0.6],
+                    [op.x+d,op.y+op.h-0.35],[op.x,op.y+op.h]], t);
+          if (op.label && t > 0.7) drawText(op.x + d*2.4, mid, op.label, 18, false, (t-0.7)/0.3);
+          break;
+        }
         case "board":
           // The lesson declares the stage it was written for.
           if (GRID_W !== op.w || GRID_H !== op.h) sizeBoard(op.w, op.h);
@@ -590,6 +960,7 @@
   }
 
   function syncLog(time) {
+    if (logEl.hidden) return;
     let active = -1;
     for (let i = 0; i < ops.length; i++) if (starts[i] <= time) active = i;
     if (active === lastActive) return;
@@ -868,6 +1239,15 @@
     for (const op of ops) delete op.audioMs;   // a new voice has new timings
     recomputeTimeline();
     paint();
+  });
+
+  // The command log is for debugging a lesson, not for watching one.
+  const logToggle = document.getElementById("logToggle");
+  logToggle.addEventListener("click", () => {
+    const open = logEl.hidden;
+    logEl.hidden = !open;
+    logToggle.setAttribute("aria-expanded", String(open));
+    if (open) { lastActive = -1; syncLog(time); }
   });
 
   const voiceBtn = document.getElementById("voice");

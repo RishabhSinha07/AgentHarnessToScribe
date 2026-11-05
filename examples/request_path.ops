@@ -1,0 +1,33 @@
+board 64 36
+text 2,2 "What the agent can draw now"
+
+# icons replace labelled boxes
+icon user 6,8 5 "client"
+icon globe 17,8 5 "CDN"
+icon server 28,8 5 "api"
+icon db 39,8 5 "postgres"
+icon queue 50,8 5 "jobs"
+
+connect "client" "CDN" "GET"
+connect "CDN" "api" "miss"
+connect "api" "postgres" "query"
+connect "postgres" "jobs" "enqueue"
+
+# structure
+group 3,16 36,9 "the request path"
+box 6,19 12,3 "parse"
+box 24,19 12,3 "respond"
+connect "parse" "respond" "elbow route"
+fill "parse" blue
+
+# the misconception move
+box 44,18 16,3 "one big server"
+strike "one big server"
+icon warning 52,25 4 "does not scale"
+
+# annotation
+note 3,28 26 "A sticky note wraps its own text, casts a shadow, and stays out of the diagram."
+brace 42,29 5 "grouped"
+dash on
+box 46,29 14,3 "optional"
+dash off

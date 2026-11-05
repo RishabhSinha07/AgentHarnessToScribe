@@ -85,7 +85,24 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
   circle  x,y,r <spoken note>    RED ring at a position you choose. Only for
                                  pointing at empty space -- for anything with
                                  a label, use `highlight` so the ring fits.
-  stroke  x1,y1 x2,y2 ...        freehand polyline (underlines, braces, ticks)
+  stroke  x1,y1 x2,y2 ...        freehand polyline (underlines, ticks)
+
+  Addressed by LABEL, so you never compute coordinates for these:
+  connect "<from>" "<to>" <label>  elbow-routed arrow between two elements.
+                                 Prefer this over `arrow`: straight diagonals
+                                 are what make a board look sketched.
+  fill    "<label>" <tint>        tint a shape (blue green grey ink none red yellow)
+  strike  "<label>" <note>        cross it out. Pairs with drawing a wrong
+                                 model on purpose, then retiring it.
+
+  Structure and emphasis:
+  icon    <name> x,y <size> <label>   pictogram. A cylinder is a database; a
+                                 box labelled "Database" is just a box.
+                                 (db server user cloud queue file clock lock globe gear warning check cross box)
+  group   x,y,w,h <label>        dashed container with a label tab
+  note    x,y,w <text>           sticky note; wraps its own text
+  brace   x,y,h <label>          vertical brace grouping a range
+  dash    on|off                 line style for everything after it
   erase   x,y,w,h <spoken note>  erase a rectangle
   erase   x,y,r <spoken note>    erase a square of radius r
   pen     <{"|".join(sorted(set(PENS)))}>
@@ -100,6 +117,10 @@ Writing a good lesson:
 - Say WHY, not WHAT. The label already says what the box is.
 - Text is about 0.5 grid units per character. Make boxes wide enough for their
   labels; you will be told if one does not fit.
+- `connect`, `fill` and `strike` take LABELS, not coordinates. Use them.
+- Reach for `icon` over a labelled box wherever one fits. It is the single
+  biggest difference between a board that looks drawn and one that looks like
+  a wireframe.
 - `highlight "<label>"` is how you point. Never guess a radius with `circle`
   for something that has a label -- you cannot see how wide the box is, and the
   ring will either cut through the text or swallow its neighbours.

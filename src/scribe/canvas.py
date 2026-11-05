@@ -36,6 +36,40 @@ PENS: dict[str, tuple[int, int, int]] = {
     "gray": (128, 136, 149),
 }
 
+# Soft tints for `fill`. Light enough that ink on top stays readable -- a
+# filled shape has to remain a shape, not become a block of colour.
+TINTS: dict[str, tuple[int, int, int]] = {
+    "ink": (232, 232, 236),
+    "red": (250, 230, 228),
+    "blue": (228, 237, 252),
+    "green": (228, 244, 236),
+    "grey": (238, 240, 243),
+    "gray": (238, 240, 243),
+    "yellow": (252, 245, 216),
+    "none": PAPER,
+}
+
+SHADOW = (224, 222, 215)  # a single soft offset, not a gradient
+
+# A box labelled "Database" is a box. A cylinder is a database. Pictograms are
+# the cheapest way for a board to stop looking like a wireframe.
+ICONS = [
+    "db",
+    "server",
+    "user",
+    "cloud",
+    "queue",
+    "file",
+    "clock",
+    "lock",
+    "globe",
+    "gear",
+    "warning",
+    "check",
+    "cross",
+    "box",
+]
+
 CHAR_W = 0.52  # grid units per character, for estimating text extents
 LINE_H = 1.05
 
@@ -51,6 +85,14 @@ _FONT_CANDIDATES = [
 # parse in Python while the browser accepted it -- the student heard a line the
 # canvas never recorded.
 _TOKEN = re.compile(r'"([^"]*)"|(\S+)')
+
+
+def _isnum(tok: str) -> bool:
+    try:
+        float(tok)
+    except ValueError:
+        return False
+    return True
 
 
 def tokenize(line: str) -> list[str]:
@@ -148,6 +190,8 @@ class Canvas:
     wiped: list[str] = field(default_factory=list)  # what each erase took out
     page: int = 0
     pen: tuple[int, int, int] = INK
+    pen_name: str = "ink"
+    dashed: bool = False
 
     def __post_init__(self) -> None:
         self._img = Image.new("RGB", (self.grid_w * CELL, self.grid_h * CELL), PAPER)
@@ -160,6 +204,31 @@ class Canvas:
 
     def _jitter(self, p: tuple[float, float], amt: float = 1.6) -> tuple[float, float]:
         return (p[0] + self._rng.uniform(-amt, amt), p[1] + self._rng.uniform(-amt, amt))
+
+    def _dashed_line(self, a, b, width=3, color=None, on=9.0, off=7.0) -> None:
+        """Dashes follow the line, so a dashed box still reads as hand-drawn."""
+        color = color or self.pen
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        if length < 1:
+            return
+        ux, uy = dx / length, dy / length
+        pos = 0.0
+        while pos < length:
+            end = min(length, pos + on)
+            self._draw.line(
+                [(a[0] + ux * pos, a[1] + uy * pos), (a[0] + ux * end, a[1] + uy * end)],
+                fill=color,
+                width=width,
+            )
+            pos = end + off
+
+    def _line(self, a, b, width=3, color=None) -> None:
+        """Honour the current dash state. Use this for anything structural."""
+        if self.dashed:
+            self._dashed_line(a, b, width, color)
+        else:
+            self._rough_line(a, b, width, color or self.pen)
 
     def _rough_line(self, a, b, width=3, color=INK) -> None:
         """Draw a line as two slightly-off passes, the way a pen doubles back."""
@@ -222,7 +291,7 @@ class Canvas:
         c = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
         px = [self._px(*p) for p in c]
         for a, b in itertools.pairwise(px):
-            self._rough_line(a, b, color=self.pen)
+            self._line(a, b)
         self._add("box", label, x, y, x + w, y + h)
         if label:
             # Warn when a label will not fit inside the box that holds it.
@@ -274,7 +343,7 @@ class Canvas:
         ]
         px = [self._px(*p) for p in pts]
         for a, b in itertools.pairwise(px):
-            self._rough_line(a, b, width=3, color=self.pen)
+            self._line(a, b, width=3)
         self._add("ellipse", label, x - rx, y - ry, x + rx, y + ry)
         if label:
             self.text(x, y, label, center=True, _log=False)
@@ -301,11 +370,7 @@ class Canvas:
         """
         target = self.find(label)
         if target is None:
-            known = [e.label for e in self.live if e.label]
-            self.errors.append(
-                f"highlight: nothing labelled {label!r} on the board. "
-                f"Labelled elements: {known or 'none'}"
-            )
+            self._no_such(label, "highlight")
             return
 
         cx = (target.x0 + target.x1) / 2
@@ -316,6 +381,165 @@ class Canvas:
         self._add("highlight", label, cx - rx, cy - ry, cx + rx, cy + ry, transparent=True)
         if note:
             self.narration.append(note)
+
+    def fill(self, label: str, tint: str = "yellow") -> None:
+        """Tint a shape, addressed by its label. Redraws the outline on top."""
+        target = self.find(label)
+        if target is None:
+            self._no_such(label, "fill")
+            return
+        if tint not in TINTS:
+            self.errors.append(f"fill: unknown tint {tint!r}; try {sorted(TINTS)}")
+            return
+
+        a, b = self._px(target.x0, target.y0), self._px(target.x1, target.y1)
+        self._draw.rectangle([a, b], fill=TINTS[tint])
+        # The fill covers the outline, so put the shape back over it.
+        corners = [
+            (target.x0, target.y0),
+            (target.x1, target.y0),
+            (target.x1, target.y1),
+            (target.x0, target.y1),
+            (target.x0, target.y0),
+        ]
+        for p0, p1 in itertools.pairwise([self._px(*c) for c in corners]):
+            self._rough_line(p0, p1, color=self.pen)
+        if target.label:
+            self.text(
+                (target.x0 + target.x1) / 2,
+                (target.y0 + target.y1) / 2,
+                target.label,
+                center=True,
+                _log=False,
+            )
+
+    def strike(self, label: str, note: str = "") -> None:
+        """Cross something out.
+
+        The counterpart to drawing a model wrong on purpose: this is how the
+        wrong model gets retired without erasing the evidence it was there.
+        """
+        target = self.find(label)
+        if target is None:
+            self._no_such(label, "strike")
+            return
+        pad = 0.3
+        self._rough_line(
+            self._px(target.x0 - pad, target.y0 - pad),
+            self._px(target.x1 + pad, target.y1 + pad),
+            width=4,
+            color=ACCENT,
+        )
+        self._rough_line(
+            self._px(target.x0 - pad, target.y1 + pad),
+            self._px(target.x1 + pad, target.y0 - pad),
+            width=4,
+            color=ACCENT,
+        )
+        self._add("strike", label, target.x0, target.y0, target.x1, target.y1, transparent=True)
+        if note:
+            self.narration.append(note)
+
+    def connect(self, src: str, dst: str, label: str = "") -> None:
+        """Arrow between two labelled elements, routed as an elbow.
+
+        The agent never computes these coordinates. It cannot see how wide a
+        box rendered, and a straight diagonal between two boxes is what makes
+        a diagram look sketched rather than drawn.
+        """
+        a, b = self.find(src), self.find(dst)
+        if a is None:
+            self._no_such(src, "connect")
+            return
+        if b is None:
+            self._no_such(dst, "connect")
+            return
+
+        ax, ay = (a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2
+        bx, by = (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2
+        horizontal = abs(bx - ax) >= abs(by - ay)
+
+        if horizontal:
+            start = (a.x1 if bx > ax else a.x0, ay)
+            end = (b.x0 if bx > ax else b.x1, by)
+            mid = (start[0] + end[0]) / 2
+            pts = [start, (mid, ay), (mid, by), end]
+        else:
+            start = (ax, a.y1 if by > ay else a.y0)
+            end = (bx, b.y0 if by > ay else b.y1)
+            mid = (start[1] + end[1]) / 2
+            pts = [start, (ax, mid), (bx, mid), end]
+
+        # Drop the dog-leg when the two are already aligned.
+        pts = [
+            p
+            for i, p in enumerate(pts)
+            if i == 0 or abs(p[0] - pts[i - 1][0]) > 0.05 or abs(p[1] - pts[i - 1][1]) > 0.05
+        ]
+
+        px = [self._px(*p) for p in pts]
+        for p0, p1 in itertools.pairwise(px):
+            self._line(p0, p1, color=self.pen)
+        self._arrow_head(px[-2], px[-1])
+
+        # A connector that ploughs through a third element is unreadable, and
+        # the agent cannot see it happen. Name the obstacle.
+        for other in self.live:
+            if other is a or other is b or not other.solid:
+                continue
+            if any(self._segment_hits(p0, p1, other) for p0, p1 in itertools.pairwise(pts)):
+                self.notes.append(
+                    f"connect {src!r} -> {dst!r} passes through {other.describe()}. "
+                    f"Move one of them, or route around it with `arrow`."
+                )
+
+        self._add(
+            "connect",
+            label,
+            min(p[0] for p in pts),
+            min(p[1] for p in pts),
+            max(p[0] for p in pts),
+            max(p[1] for p in pts),
+            transparent=True,
+        )
+        if label:
+            lx, ly = (pts[0][0] + pts[-1][0]) / 2, (pts[0][1] + pts[-1][1]) / 2
+            self.text(
+                lx,
+                self._dodge_label(lx, ly - 0.7, label)[1],
+                label,
+                size=18,
+                center=True,
+                _log=False,
+            )
+
+    @staticmethod
+    def _segment_hits(p0, p1, el: Element) -> bool:
+        """Does the segment p0-p1 cross this element's box? Sampled, not exact."""
+        steps = max(2, int(math.hypot(p1[0] - p0[0], p1[1] - p0[1]) * 2))
+        for i in range(steps + 1):
+            t = i / steps
+            x = p0[0] + (p1[0] - p0[0]) * t
+            y = p0[1] + (p1[1] - p0[1]) * t
+            if el.x0 < x < el.x1 and el.y0 < y < el.y1:
+                return True
+        return False
+
+    def _arrow_head(self, a, b) -> None:
+        ang = math.atan2(b[1] - a[1], b[0] - a[0])
+        for sign in (+1, -1):
+            self._rough_line(
+                b,
+                (b[0] - 14 * math.cos(ang + sign * 0.45), b[1] - 14 * math.sin(ang + sign * 0.45)),
+                width=2,
+                color=self.pen,
+            )
+
+    def _no_such(self, label: str, op: str) -> None:
+        known = [e.label for e in self.live if e.label]
+        self.errors.append(
+            f"{op}: nothing labelled {label!r} on the board. Labelled elements: {known or 'none'}"
+        )
 
     def _ring(self, cx, cy, rx, ry, color=ACCENT) -> None:
         pts = [
@@ -355,6 +579,249 @@ class Canvas:
         )
         if note:
             self.narration.append(note)
+
+    def icon(self, name: str, x: float, y: float, size: float = 4.0, label: str = "") -> None:
+        """Draw a pictogram centred on (x, y), `size` grid units wide."""
+        name = name.lower()
+        if name not in ICONS:
+            self.errors.append(f"icon: unknown {name!r}; try {' '.join(ICONS)}")
+            return
+
+        r = size / 2
+        h = r * 1.15  # icons are slightly taller than wide
+        getattr(self, f"_icon_{name}")(x, y, r, h)
+        self._add("icon", label or name, x - r, y - h, x + r, y + h + (1.2 if label else 0))
+        if label:
+            self.text(x, y + h + 0.7, label, size=18, center=True, _log=False)
+
+    def _ellipse_pts(self, cx, cy, rx, ry, start=0, end=16):
+        return [
+            (cx + rx * math.cos(t * math.pi / 8), cy + ry * math.sin(t * math.pi / 8))
+            for t in range(start, end + 1)
+        ]
+
+    def _poly(self, pts, close=False, width=3) -> None:
+        path = [*pts, pts[0]] if close else pts
+        for a, b in itertools.pairwise([self._px(*p) for p in path]):
+            self._rough_line(a, b, width=width, color=self.pen)
+
+    def _icon_db(self, x, y, r, h) -> None:
+        lid = h * 0.28
+        self._poly(self._ellipse_pts(x, y - h + lid, r, lid), close=True)
+        self._poly([(x - r, y - h + lid), (x - r, y + h - lid)])
+        self._poly([(x + r, y - h + lid), (x + r, y + h - lid)])
+        self._poly(self._ellipse_pts(x, y + h - lid, r, lid, 0, 8))  # front lip only
+        self._poly(self._ellipse_pts(x, y, r, lid, 0, 8))  # a band
+
+    def _icon_server(self, x, y, r, h) -> None:
+        for i in range(3):
+            top = y - h + i * (2 * h / 3)
+            self._poly(
+                [
+                    (x - r, top),
+                    (x + r, top),
+                    (x + r, top + 2 * h / 3 - 0.15),
+                    (x - r, top + 2 * h / 3 - 0.15),
+                ],
+                close=True,
+            )
+            self._poly([(x - r * 0.6, top + h / 3), (x + r * 0.1, top + h / 3)], width=2)
+
+    def _icon_user(self, x, y, r, h) -> None:
+        head = r * 0.46
+        self._poly(self._ellipse_pts(x, y - h + head * 1.3, head, head), close=True)
+        self._poly(self._ellipse_pts(x, y + h, r, h * 0.8, 8, 16))  # shoulders
+
+    def _icon_cloud(self, x, y, r, h) -> None:
+        """The union outline of three overlapping bumps.
+
+        Drawing each bump whole leaves the hidden interior arcs visible and the
+        icon reads as a row of arches. Keeping only the points that lie outside
+        every other bump traces the silhouette instead.
+        """
+        base = y + h * 0.5
+        bumps = [
+            (x - r * 0.48, r * 0.54, h * 0.6),
+            (x + r * 0.06, r * 0.56, h * 0.92),
+            (x + r * 0.58, r * 0.46, h * 0.58),
+        ]
+
+        def inside(px_, py_, skip):
+            for j, (cx, rx, ry) in enumerate(bumps):
+                if j == skip:
+                    continue
+                if ((px_ - cx) / rx) ** 2 + ((py_ - base) / ry) ** 2 < 0.97:
+                    return True
+            return False
+
+        for i, (cx, rx, ry) in enumerate(bumps):
+            run: list[tuple[float, float]] = []
+            for k in range(41):
+                ang = math.pi + math.pi * k / 40
+                pt = (cx + rx * math.cos(ang), base + ry * math.sin(ang))
+                if inside(pt[0], pt[1], i):
+                    if len(run) > 1:
+                        self._poly(run)
+                    run = []
+                else:
+                    run.append(pt)
+            if len(run) > 1:
+                self._poly(run)
+        self._poly([(x - r, base), (x + r, base)])
+
+    def _icon_queue(self, x, y, r, h) -> None:
+        self._poly([(x - r, y - h * 0.55), (x + r, y - h * 0.55)])
+        self._poly([(x - r, y + h * 0.55), (x + r, y + h * 0.55)])
+        box_w = r * 0.42
+        for i in range(3):
+            left = x - r * 0.85 + i * (box_w + r * 0.26)
+            self._poly(
+                [
+                    (left, y - h * 0.3),
+                    (left + box_w, y - h * 0.3),
+                    (left + box_w, y + h * 0.3),
+                    (left, y + h * 0.3),
+                ],
+                close=True,
+                width=2,
+            )
+
+    def _icon_file(self, x, y, r, h) -> None:
+        fold = r * 0.5
+        self._poly(
+            [
+                (x - r, y - h),
+                (x + r - fold, y - h),
+                (x + r, y - h + fold),
+                (x + r, y + h),
+                (x - r, y + h),
+            ],
+            close=True,
+        )
+        self._poly([(x + r - fold, y - h), (x + r - fold, y - h + fold), (x + r, y - h + fold)])
+
+    def _icon_clock(self, x, y, r, h) -> None:
+        self._poly(self._ellipse_pts(x, y, r, h * 0.88), close=True)
+        self._poly([(x, y), (x, y - h * 0.5)], width=2)
+        self._poly([(x, y), (x + r * 0.6, y + h * 0.18)], width=2)
+
+    def _icon_lock(self, x, y, r, h) -> None:
+        body_top = y - h * 0.05
+        self._poly(
+            [(x - r, body_top), (x + r, body_top), (x + r, y + h), (x - r, y + h)], close=True
+        )
+        sr = r * 0.56
+        shackle = [
+            (x - sr, body_top),
+            (x - sr, y - h * 0.45),
+            *[
+                (
+                    x + sr * math.cos(math.pi + math.pi * i / 10),
+                    y - h * 0.45 + sr * 0.85 * math.sin(math.pi + math.pi * i / 10),
+                )
+                for i in range(11)
+            ],
+            (x + sr, y - h * 0.45),
+            (x + sr, body_top),
+        ]
+        self._poly(shackle, width=3)
+        self._poly([(x, y + h * 0.3), (x, y + h * 0.62)], width=3)
+
+    def _icon_globe(self, x, y, r, h) -> None:
+        self._poly(self._ellipse_pts(x, y, r, h * 0.88), close=True)
+        self._poly(self._ellipse_pts(x, y, r * 0.42, h * 0.88), close=True)
+        self._poly([(x - r, y), (x + r, y)], width=2)
+
+    def _icon_gear(self, x, y, r, h) -> None:
+        self._poly(self._ellipse_pts(x, y, r * 0.72, h * 0.66), close=True)
+        self._poly(self._ellipse_pts(x, y, r * 0.3, h * 0.28), close=True)
+        for i in range(8):
+            ang = i * math.pi / 4
+            self._poly(
+                [
+                    (x + r * 0.72 * math.cos(ang), y + h * 0.66 * math.sin(ang)),
+                    (x + r * 1.0 * math.cos(ang), y + h * 0.92 * math.sin(ang)),
+                ],
+                width=2,
+            )
+
+    def _icon_warning(self, x, y, r, h) -> None:
+        self._poly([(x, y - h), (x + r, y + h * 0.8), (x - r, y + h * 0.8)], close=True)
+        self._poly([(x, y - h * 0.35), (x, y + h * 0.25)], width=3)
+        self._poly([(x, y + h * 0.5), (x, y + h * 0.58)], width=3)
+
+    def _icon_check(self, x, y, r, h) -> None:
+        self._poly(
+            [(x - r * 0.8, y), (x - r * 0.15, y + h * 0.6), (x + r * 0.9, y - h * 0.7)], width=4
+        )
+
+    def _icon_cross(self, x, y, r, h) -> None:
+        self._poly([(x - r * 0.75, y - h * 0.7), (x + r * 0.75, y + h * 0.7)], width=4)
+        self._poly([(x - r * 0.75, y + h * 0.7), (x + r * 0.75, y - h * 0.7)], width=4)
+
+    def _icon_box(self, x, y, r, h) -> None:
+        self._poly([(x - r, y - h), (x + r, y - h), (x + r, y + h), (x - r, y + h)], close=True)
+
+    def group(self, x, y, w, h, label: str = "") -> None:
+        """A dashed container with a label tab. Structure without a hard edge."""
+        corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+        for a, b in itertools.pairwise([self._px(*c) for c in corners]):
+            self._dashed_line(a, b, width=2, color=PENS["grey"])
+        if label:
+            # A tab sitting on the top edge, so the label is clearly the group's.
+            tw = len(label) * CHAR_W + 0.8
+            self._draw.rectangle(
+                [self._px(x + 0.6, y - 0.55), self._px(x + 0.6 + tw, y + 0.55)], fill=PAPER
+            )
+            self.text(x + 1.0, y, label, size=17, _log=False)
+        # Transparent: a group is meant to contain things, not collide with them.
+        self._add("group", label, x, y, x + w, y + h, transparent=True)
+
+    def note(self, x, y, w, text: str) -> None:
+        """A sticky note. For an aside that is not part of the diagram."""
+        lines = self._wrap(text, max(6, int(w / CHAR_W)))
+        h = len(lines) * LINE_H + 0.9
+        a, b = self._px(x, y), self._px(x + w, y + h)
+        self._draw.rectangle([(a[0] + 5, a[1] + 5), (b[0] + 5, b[1] + 5)], fill=SHADOW)
+        self._draw.rectangle([a, b], fill=TINTS["yellow"])
+        corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+        for p0, p1 in itertools.pairwise([self._px(*c) for c in corners]):
+            self._rough_line(p0, p1, width=2, color=PENS["grey"])
+        for i, line in enumerate(lines):
+            self.text(x + 0.5, y + 0.7 + i * LINE_H, line, size=17, _log=False)
+        self._add("note", text[:24], x, y, x + w, y + h)
+
+    @staticmethod
+    def _wrap(text: str, width: int) -> list[str]:
+        words, lines, cur = text.split(), [], ""
+        for word in words:
+            trial = f"{cur} {word}".strip()
+            if len(trial) <= width or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = word
+        if cur:
+            lines.append(cur)
+        return lines
+
+    def brace(self, x, y, h, label: str = "") -> None:
+        """A vertical brace grouping a range, with the label outside it."""
+        mid, d = y + h / 2, 0.55
+        pts = [
+            (x, y),
+            (x + d, y + 0.35),
+            (x + d, mid - 0.6),
+            (x + d * 1.8, mid),
+            (x + d, mid + 0.6),
+            (x + d, y + h - 0.35),
+            (x, y + h),
+        ]
+        for a, b in itertools.pairwise([self._px(*p) for p in pts]):
+            self._rough_line(a, b, width=3, color=self.pen)
+        if label:
+            self.text(x + d * 2.4, mid, label, size=18, _log=False)
+        self._add("brace", label, x, y, x + d * 2, y + h, transparent=True)
 
     def erase_preview(self, x0, y0, x1, y1) -> list[Element]:
         """Which live elements a given erase rectangle would touch. No side effects."""
@@ -477,7 +944,7 @@ class Canvas:
 
         cmd, args = parts[0].lower(), parts[1:]
 
-        def take(n: int) -> tuple[list[float], int]:
+        def take(n: int, start: int = 0) -> tuple[list[float], int]:
             """Pull the first n numbers off args, accepting "3 4" or "3,4" equally.
 
             Returns the numbers plus how many arg tokens they consumed, so any
@@ -485,7 +952,7 @@ class Canvas:
             """
             vals: list[float] = []
             used = 0
-            for tok in args:
+            for tok in args[start:]:
                 if len(vals) >= n:
                     break
                 used += 1
@@ -531,11 +998,41 @@ class Canvas:
                 except ValueError:
                     (x, y, r), used = take(3)
                     self.erase(x, y, r, note=label_after(used))
+            elif cmd == "icon":
+                name = args[0] if args else ""
+                (x, y), used = take(2, start=1)
+                rest = args[used + 1 :]
+                size = 4.0
+                if rest and _isnum(rest[0]):
+                    size = float(rest[0])
+                    rest = rest[1:]
+                self.icon(name, x, y, size, " ".join(rest).strip())
+            elif cmd == "connect":
+                self.connect(
+                    args[0] if args else "",
+                    args[1] if len(args) > 1 else "",
+                    " ".join(args[2:]).strip(),
+                )
+            elif cmd == "fill":
+                self.fill(args[0] if args else "", (args[1] if len(args) > 1 else "yellow").lower())
+            elif cmd == "strike":
+                self.strike(args[0] if args else "", " ".join(args[1:]).strip())
+            elif cmd == "group":
+                (x, y, w, h), used = take(4)
+                self.group(x, y, w, h, label_after(used))
+            elif cmd == "note":
+                (x, y, w), used = take(3)
+                self.note(x, y, w, label_after(used))
+            elif cmd == "brace":
+                (x, y, h), used = take(3)
+                self.brace(x, y, h, label_after(used))
+            elif cmd == "dash":
+                self.dashed = (args[0].lower() if args else "on") not in ("off", "false", "0")
             elif cmd == "pen":
                 name = (args[0] if args else "ink").lower()
                 if name not in PENS:
                     return OpResult(False, f"unknown pen {name!r}; try {sorted(PENS)}")
-                self.pen = PENS[name]
+                self.pen, self.pen_name = PENS[name], name
             elif cmd == "board":
                 (w, h), _ = take(2)
                 self.set_board(w, h)

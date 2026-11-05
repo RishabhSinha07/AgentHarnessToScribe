@@ -40,6 +40,31 @@ A plan needs four things, and the fourth is the one people skip:
   then correct it — that correction is the one move a finished diagram cannot
   make, and it is the best reason this tool exists.
 
+## Use the right primitive
+
+A board of labelled rectangles looks like a wireframe. These exist so it does
+not have to:
+
+| Instead of | Use | Why |
+|---|---|---|
+| `box ... "Database"` | `icon db x,y 5 "Database"` | A cylinder *is* a database. Biggest single visual win. |
+| `arrow` between two boxes | `connect "a" "b" "label"` | Elbow-routed from the real boxes. You cannot see how wide they rendered. |
+| A box around related things | `group x,y,w,h "label"` | Dashed container with a label tab; never collides with its contents. |
+| An aside squeezed into the diagram | `note x,y,w "text"` | Sticky note, wraps its own text, stays out of the way. |
+| Erasing a wrong model | `strike "label"` | Keeps the evidence it was there. Pairs with the misconception beat. |
+
+Icons: db server user cloud queue file clock lock globe gear warning check cross box
+
+`fill "label" blue|green|red|yellow|grey` tints a shape — use it to mark one
+path through a diagram, or the half of a system you are currently discussing.
+`dash on` makes everything after it dashed, for optional or async paths.
+`brace x,y,h "label"` groups a vertical range.
+
+**`connect`, `fill`, `strike` and `highlight` all take labels, not
+coordinates.** That is deliberate: the canvas knows where things are and how
+big they rendered, and you do not. If the report says a connector *passes
+through* something, move one of the two or route it by hand with `arrow`.
+
 ## Narration rules
 
 - **Say why, not what.** The label says what. If a `say` line would still be

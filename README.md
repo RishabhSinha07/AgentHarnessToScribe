@@ -18,6 +18,11 @@ it means, and erase what it got wrong.
 
 *Drawn by Claude, one command at a time, while explaining backpropagation.*
 
+![A request path drawn with icons: a user, a globe, a server stack, a database cylinder and a queue, joined by elbow-routed arrows, with a dashed group, a tinted box, a struck-out alternative and a sticky note](docs/gallery.png)
+
+*The richer primitives: icons instead of labelled boxes, elbow-routed
+connectors, groups, tints, strike-outs and notes.*
+
 **[▶ Watch it draw itself](https://rishabhsinha07.github.io/AgentHarnessToScribe/)** — the same lesson
 played back stroke by stroke, narrated aloud. Nothing to install.
 (Runs from `docs/`; enable GitHub Pages on `main` / `/docs` to serve it.)
@@ -104,6 +109,16 @@ ellipse x,y,rx,ry <label>      oval in the current pen
 arrow   x1,y1 x2,y2 <label>    arrow, label auto-dodges collisions
 highlight "<label>" <note>     RED ring, sized from the target's own box
 circle  x,y,r <spoken note>    RED ring at a chosen spot (empty space only)
+
+connect "<a>" "<b>" <label>    elbow-routed arrow between two elements
+fill    "<label>" <tint>       tint a shape
+strike  "<label>" <note>       cross it out
+
+icon    <name> x,y <size> <label>   pictogram (db, server, user, cloud, …)
+group   x,y,w,h <label>        dashed container with a label tab
+note    x,y,w <text>           sticky note, wraps its own text
+brace   x,y,h <label>          vertical brace over a range
+dash    on|off                 line style for what follows
 stroke  x1,y1 x2,y2 ...        freehand polyline
 erase   x,y,w,h <spoken note>  erase a rectangle
 pen     ink|red|blue|green|grey
@@ -184,7 +199,11 @@ spends an image on `scribe_look` when the text says something is wrong.
 - **The board opens itself**, and the server picks a free port rather than
   handing out a URL that never loads.
 - **Pointing is not guesswork.** `highlight "<label>"` sizes the ring from the
-  target's own box, because an agent cannot see how wide a box rendered.
+  target's own box, because an agent cannot see how wide a box rendered. The
+  same applies to `connect`, `fill` and `strike`: all take labels, and the
+  canvas does the geometry.
+- **A connector that ploughs through a third element is reported**, naming the
+  obstacle — another thing invisible to an agent working blind.
 
 For Claude Code there is also a skill in `.claude/skills/whiteboard-teaching/`
 covering layout budgeting, when to point, and what to do about each kind of
