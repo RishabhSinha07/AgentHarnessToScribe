@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Scribe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,32 +58,26 @@
   .board { position:relative; background:var(--paper); }
   canvas { display:block; width:100%; height:auto; }
 
-  /* Narration floats over the board and fades when nothing is being said,
-     so it costs no permanent vertical space. */
-  .board { position:relative; }
-  .subtitle {
-    position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
-    max-width:min(80%, 70ch); padding:9px 18px; border-radius:999px;
-    background:rgba(20,22,26,.82); color:#F4F5F7;
-    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.4;
-    text-align:center; text-wrap:pretty; pointer-events:none;
-    opacity:0; transition:opacity .35s ease;
+  /* Narration gets its own strip below the board. It used to float over the
+     canvas, covering whatever was drawn at the bottom -- which is exactly
+     where a lesson puts its payoff. Fixed height, so nothing shifts. */
+  .narration {
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    min-height:48px; padding:8px 20px;
+    border-top:1px solid var(--rule); background:var(--sunken);
   }
-  .subtitle.on { opacity:1; }
-  .subtitle.gesture { background:rgba(46,125,91,.9); }
+  .narration-text {
+    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.35;
+    color:var(--ink); text-align:center; text-wrap:pretty;
+    opacity:0; transition:opacity .3s ease;
+  }
+  .narration.on .narration-text { opacity:1; }
+  .narration.gesture .narration-text { color:var(--good); }
 
-  /* Shown when playback has caught up to the live head and the agent is still
-     working. Without it the board just sits there and reads as broken. */
-  .thinking {
-    position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
-    display:flex; align-items:center; gap:9px;
-    padding:8px 16px 8px 13px; border-radius:999px;
-    background:rgba(20,22,26,.78); color:#F4F5F7;
+  .thinking { display:none; align-items:center; gap:9px;
     font-family:Archivo,sans-serif; font-size:13px; font-weight:600;
-    letter-spacing:.04em; pointer-events:none;
-    opacity:0; transition:opacity .4s ease;
-  }
-  .thinking.on { opacity:1; }
+    letter-spacing:.04em; color:var(--muted); }
+  .thinking.on { display:inline-flex; }
   .nib { width:9px; height:9px; border-radius:50% 50% 50% 2px;
     background:var(--accent); transform:rotate(-45deg);
     animation:nib 1.5s ease-in-out infinite; }
@@ -98,7 +93,7 @@
   @keyframes dot { 0%,60%,100% { opacity:.3; } 30% { opacity:1; } }
   @media (prefers-reduced-motion: reduce) {
     .nib, .dots i { animation:none; opacity:1; }
-    .thinking { transition:none; }
+    .narration-text { transition:none; }
   }
 
   /* Chrome refuses speechSynthesis and audio playback until the page has had
@@ -205,6 +200,13 @@
     background:transparent; border-color:transparent; color:var(--good); }
   #follow[aria-pressed="true"]:hover, .voice-btn[aria-pressed="true"]:hover {
     background:var(--surface); border-color:var(--rule); }
+  #fullscreen { font-size:15px; padding:7px 11px; }
+  /* In full screen the board fills the glass rather than sitting in a card. */
+  .stage:fullscreen { border-radius:0; border:0; display:flex; flex-direction:column;
+    height:100vh; background:var(--ground); }
+  .stage:fullscreen .board { flex:1; display:flex; align-items:center;
+    justify-content:center; overflow:hidden; }
+  .stage:fullscreen canvas { width:auto; height:auto; max-width:100%; max-height:100%; }
   #logToggle { font-family:"JetBrains Mono",monospace; font-size:13px; padding:8px 11px; }
   #logToggle[aria-expanded="true"] { color:var(--accent); background:var(--surface);
     border-color:var(--rule); }
@@ -220,16 +222,18 @@
   <div class="stage">
     <div class="board">
       <canvas id="board" width="1536" height="864"></canvas>
-      <div class="subtitle" id="caption"><span id="captionText"></span></div>
-      <div class="thinking" id="thinking" aria-live="polite">
-        <span class="nib"></span>
-        <span id="thinkingText">thinking</span><span class="dots"><i></i><i></i><i></i></span>
-      </div>
       <button class="gate" id="gate" type="button">
         <span class="gate-icon">▶</span>
         <span class="gate-label">Start lesson</span>
         <span class="gate-sub">Browsers need a click before they will speak</span>
       </button>
+    </div>
+    <div class="narration" id="caption">
+      <span class="thinking" id="thinking" aria-live="polite">
+        <span class="nib"></span>
+        <span id="thinkingText">thinking</span><span class="dots"><i></i><i></i><i></i></span>
+      </span>
+      <span class="narration-text" id="captionText"></span>
     </div>
     <div class="controls">
       <button class="primary" id="play">Play</button>
@@ -248,6 +252,7 @@
       <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
         <option value="browser">Browser voice</option>
       </select>
+      <button id="fullscreen" class="ghost" title="Full screen (f)">&#9974;</button>
       <button id="logToggle" class="ghost" aria-expanded="false"
               aria-controls="oplog" title="Show the drawing commands">&lt;/&gt;</button>
     </div>
@@ -268,6 +273,7 @@
                   grey:"#EEF0F3", gray:"#EEF0F3", yellow:"#FCF5D8", none:PAPER };
   const SHADOW = "#E0DED7";
   let dashed = false;
+  let viewY = 0;   // top row of the board currently on screen
   let pen = PEN;                         // current pen, reset each render pass
 
   const cv = document.getElementById("board");
@@ -295,7 +301,7 @@
     n = Math.imul(n ^ 61, 0x27d4eb2d); n ^= n >>> 15;
     return ((n >>> 0) / 4294967296) * 2 - 1;
   }
-  const px = (x, y) => [x * CELL, y * CELL];
+  const px = (x, y) => [x * CELL, (y - viewY) * CELL];
   const jit = ([x, y], a = 1.6) => [x + rnd() * a, y + rnd() * a];
 
   function roughLine(a, b, width = 3, color = null, t = 1) {
@@ -665,6 +671,9 @@
         ops.push({ cmd, x, y, h, label: label(u), raw: line });
       } else if (cmd === "dash") {
         ops.push({ cmd, on: !["off","false","0"].includes((args[0]||"on").toLowerCase()), raw: line });
+      } else if (cmd === "pan") {
+        const [[y]] = take(1);
+        ops.push({ cmd, y, raw: line });
       } else if (cmd === "board") {
         const [[w, h]] = take(2);
         ops.push({ cmd, w, h, raw: line });
@@ -709,6 +718,7 @@
       case "note":    return 700;
       case "brace":   return 520;
       case "dash":    return 1;      // state change
+      case "pan":     return 900;    // the camera glides, it does not cut
       case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
       case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
@@ -763,12 +773,32 @@
     if (atHead) time = total;
   }
 
+  /** Where the camera is at time `t`.
+   *
+   *  Resolved for the whole frame before anything is drawn. Applying pans as
+   *  they are reached mid-loop moves only what comes after them, so the board
+   *  before the pan stays put and the two screens draw on top of each other.
+   */
+  function cameraAt(t) {
+    let from = 0, y = 0;
+    for (let i = 0; i < ops.length; i++) {
+      if (ops[i].cmd !== "pan") continue;
+      if (starts[i] > t) break;
+      const p = Math.min(1, (t - starts[i]) / duration(ops[i]));
+      const eased = p * p * (3 - 2 * p);          // glide, do not cut
+      y = from + (ops[i].y - from) * eased;
+      if (p >= 1) from = ops[i].y;
+    }
+    return y;
+  }
+
   // --- render ---------------------------------------------------------------
   function renderAt(time) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
-    pen = PEN;        // pen/dash state is rebuilt from the op stream each pass
+    pen = PEN;        // pen/dash state is rebuilt from the stream each pass
     dashed = false;
+    viewY = cameraAt(time);
     solids = [];
     labelled = new Map();
 
@@ -823,6 +853,7 @@
         }
         case "pen": pen = PENS[op.name] || PEN; break;
         case "dash": dashed = op.on; break;
+        case "pan": break;   // handled by cameraAt(), before anything is drawn
 
         case "icon": {
           const r = op.size / 2, h = r * 1.15;
@@ -1316,6 +1347,19 @@
     if (open) { lastActive = -1; syncLog(time); }
   });
 
+  const stageEl = document.querySelector(".stage");
+  const fsBtn = document.getElementById("fullscreen");
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else stageEl.requestFullscreen?.().catch(() => {});
+  }
+  fsBtn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === "f") toggleFullscreen();
+    else if (e.key === " ") { e.preventDefault(); playBtn.click(); }
+  });
+
   const voiceBtn = document.getElementById("voice");
   {
     voiceBtn.addEventListener("click", () => {
@@ -1349,6 +1393,7 @@
   let socketOpen = false;
   let lessonEnded = false;
   let idleSince = null;
+  const IDLE_GIVE_UP = 90_000;   // after this, stop claiming the agent is busy
 
   function tickPresence() {
     const atHead = total === 0 || time >= total - 1;
@@ -1365,11 +1410,15 @@
     // Hold off briefly, or the pill flashes in the pause between every scene.
     if (idleSince === null) idleSince = performance.now();
     const held = performance.now() - idleSince;
-    if (held > 600) {
+    if (held > 600 && held < IDLE_GIVE_UP) {
       thinkingText.textContent = total === 0 ? "waiting for the first stroke" : "thinking";
       thinkingEl.classList.add("on");
-      capEl.classList.remove("on");   // same anchor; never both at once
       setStatus("on", "thinking");
+    } else if (held >= IDLE_GIVE_UP) {
+      // An agent that never calls scribe_finish should not leave the board
+      // spinning indefinitely. Stop claiming it is thinking.
+      thinkingEl.classList.remove("on");
+      setStatus("on", "idle");
     }
   }
   setInterval(tickPresence, 200);
@@ -1383,6 +1432,16 @@
     statusEl.classList.toggle("on", state === "on");
     statusEl.classList.toggle("off", state === "off");
     statusText.textContent = text;
+  }
+
+  /** An exported replay: ops are baked in and there is nothing to connect to. */
+  function bootStandalone() {
+    topicEl.textContent = window.__TOPIC__ || "Scribe lesson";
+    if (window.__GRID__) sizeBoard(window.__GRID__[0], window.__GRID__[1]);
+    lessonEnded = true;          // a recording is complete by definition
+    setStatus("on", "recording");
+    document.getElementById("follow").hidden = true;
+    replaceOps(window.__OPS__ || "", false);
   }
 
   function connect() {
@@ -1399,6 +1458,7 @@
       if (msg.type === "hello") {
         topicEl.textContent = msg.topic || "Untitled lesson";
         if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);   // board size is the server's call
+        lessonEnded = !!msg.finished;
         // hello is a FULL state sync, and arrives again on every reconnect.
         // Appending here would duplicate the whole lesson and speak it twice.
         // Catch up only if we have already been watching.
@@ -1409,6 +1469,10 @@
         // The agent undid a scene; drop everything and replay the survivors.
         if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);
         replaceOps(msg.ops, true);
+      } else if (msg.type === "finished") {
+        lessonEnded = true;
+        thinkingEl.classList.remove("on");
+        setStatus("on", "complete");
       } else if (msg.type === "closed") {
         lessonEnded = true;
         thinkingEl.classList.remove("on");
@@ -1427,7 +1491,11 @@
 
   // Canvas text needs the handwriting face loaded, or the first paint
   // silently falls back and every glyph shifts once it arrives.
-  function boot() { paint(); connect(); }
+  function boot() {
+    paint();
+    if (typeof window.__OPS__ === "string") bootStandalone();
+    else connect();
+  }
   if (document.fonts && document.fonts.load) {
     Promise.all([document.fonts.load('600 20px Caveat'), document.fonts.ready])
       .then(boot).catch(boot);

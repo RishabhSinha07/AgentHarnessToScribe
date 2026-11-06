@@ -126,6 +126,7 @@ USAGE: dict[str, str] = {
     "erase": "erase x,y,w,h <note>  OR  erase x,y,r <note>",
     "pen": "pen <ink|red|blue|green|grey>",
     "board": "board W H                   e.g.  board 40 30 (first line only)",
+    "pan": "pan Y                        e.g.  pan 36 (scroll to fresh board)",
     "page": "page <title>",
     "say": 'say <text>                  e.g.  say "Now the hard part."',
 }
@@ -148,6 +149,8 @@ class Element:
     x1: float
     y1: float
     page: int = 0
+    panels: int = field(init=False, default=1)
+    view_y: float = field(init=False, default=0.0)
     # Highlights and freehand are meant to cross other things; they never
     # count as collisions and nothing collides with them.
     transparent: bool = False
@@ -178,8 +181,9 @@ class Canvas:
     """Stateful whiteboard. Ops mutate it; `render` snapshots it."""
 
     seed: int = 7
-    grid_w: int = GRID_W
+    grid_w: int = GRID_W  # the viewport: what a watcher sees at once
     grid_h: int = GRID_H
+    max_panels: int = 6  # how far the board may extend downward
     _img: Image.Image = field(init=False)
     _draw: ImageDraw.ImageDraw = field(init=False)
     _rng: random.Random = field(init=False)
@@ -189,11 +193,20 @@ class Canvas:
     notes: list[str] = field(default_factory=list)  # advisory, per scene
     wiped: list[str] = field(default_factory=list)  # what each erase took out
     page: int = 0
+    panels: int = field(init=False, default=1)
+    view_y: float = field(init=False, default=0.0)
     pen: tuple[int, int, int] = INK
     pen_name: str = "ink"
     dashed: bool = False
 
+    @property
+    def board_h(self) -> int:
+        """Full height of the drawing surface, which grows as the lesson does."""
+        return self.grid_h * self.panels
+
     def __post_init__(self) -> None:
+        self.panels = 1
+        self.view_y = 0.0  # top row of the visible window
         self._img = Image.new("RGB", (self.grid_w * CELL, self.grid_h * CELL), PAPER)
         self._draw = ImageDraw.Draw(self._img)
         self._rng = random.Random(self.seed)
@@ -252,16 +265,18 @@ class Canvas:
         # Drawing past the edge used to be silent -- the op "succeeded", the ink
         # landed outside the image, and the report said all was well. An agent
         # reasoning about a 64x36 board will write y=40 sooner or later.
-        if el.x1 < 0 or el.y1 < 0 or el.x0 > self.grid_w or el.y0 > self.grid_h:
+        if kind not in ("pan",) and self._grow_to(el.y1):
+            pass
+        if el.x1 < 0 or el.y1 < 0 or el.x0 > self.grid_w or el.y0 > self.board_h:
             self.errors.append(
                 f"{kind} at ({el.x0:g},{el.y0:g})-({el.x1:g},{el.y1:g}) is entirely "
-                f"off the {self.grid_w}x{self.grid_h} board -- nothing was drawn"
+                f"off the {self.grid_w}x{self.board_h} board -- nothing was drawn"
             )
-        elif kind != "erase" and (
-            el.x0 < 0 or el.y0 < 0 or el.x1 > self.grid_w or el.y1 > self.grid_h
+        elif kind not in ("erase", "pan") and (
+            el.x0 < 0 or el.y0 < 0 or el.x1 > self.grid_w or el.y1 > self.board_h
         ):
             self.notes.append(
-                f"{el.describe()} runs off the {self.grid_w}x{self.grid_h} board "
+                f"{el.describe()} runs off the {self.grid_w}x{self.board_h} board "
                 f"-- part of it is not visible"
             )
         self.elements.append(el)
@@ -856,6 +871,38 @@ class Canvas:
         if note:
             self.narration.append(note)
 
+    def _grow_to(self, bottom: float) -> bool:
+        """Extend the surface downward so `bottom` fits. False if capped."""
+        needed = math.ceil(bottom / self.grid_h)
+        if needed <= self.panels:
+            return True
+        if needed > self.max_panels:
+            return False
+        taller = Image.new("RGB", (self.grid_w * CELL, needed * self.grid_h * CELL), PAPER)
+        taller.paste(self._img, (0, 0))
+        self._img = taller
+        self._draw = ImageDraw.Draw(self._img)
+        self.panels = needed
+        return True
+
+    def pan(self, y: float) -> None:
+        """Move the visible window so drawing can continue on fresh board.
+
+        The alternative is erasing to make room, which destroys the lesson as
+        it goes and leaves nothing to export.
+        """
+        if y < 0:
+            self.errors.append("pan: y cannot be negative")
+            return
+        if not self._grow_to(y + self.grid_h):
+            self.errors.append(
+                f"pan {y:g}: the board is capped at {self.max_panels} screens "
+                f"({self.max_panels * self.grid_h} rows). Finish the lesson here."
+            )
+            return
+        self.view_y = y
+        self._add("pan", "", 0, y, 0.1, y + 0.1, transparent=True)
+
     def set_board(self, w: float, h: float) -> None:
         """Resize the board. Only valid before anything is drawn.
 
@@ -867,6 +914,8 @@ class Canvas:
         if not (8 <= w <= 200 and 6 <= h <= 200):
             raise ValueError(f"board {w:g}x{h:g} is out of range (8..200 by 6..200)")
         self.grid_w, self.grid_h = int(w), int(h)
+        self.panels = 1
+        self.view_y = 0.0  # top row of the visible window
         self._img = Image.new("RGB", (self.grid_w * CELL, self.grid_h * CELL), PAPER)
         self._draw = ImageDraw.Draw(self._img)
 
@@ -906,14 +955,17 @@ class Canvas:
         their path actually passes through.
         """
         cells: set[tuple[int, int]] = set()
+        top, bottom = self.view_y, self.view_y + self.grid_h
 
         def fill(x0, y0, x1, y1):
             for gx in range(max(0, int(x0)), min(self.grid_w, int(x1) + 1)):
-                for gy in range(max(0, int(y0)), min(self.grid_h, int(y1) + 1)):
+                for gy in range(max(int(top), int(y0)), min(int(bottom), int(y1) + 1)):
                     cells.add((gx, gy))
 
         for e in self.live:
-            if e.kind in ("erase", "circle", "highlight"):
+            if e.y1 < top or e.y0 > bottom:
+                continue
+            if e.kind in ("erase", "circle", "highlight", "pan"):
                 continue  # erasures remove ink; rings sit over what is there
             if e.kind in ("stroke", "arrow"):
                 # Walk the diagonal of the box rather than filling it.
@@ -1026,6 +1078,9 @@ class Canvas:
             elif cmd == "brace":
                 (x, y, h), used = take(3)
                 self.brace(x, y, h, label_after(used))
+            elif cmd == "pan":
+                (y,), _ = take(1)
+                self.pan(y)
             elif cmd == "dash":
                 self.dashed = (args[0].lower() if args else "on") not in ("off", "false", "0")
             elif cmd == "pen":
@@ -1073,12 +1128,17 @@ class Canvas:
         live = self.live
         out = [
             (
-                f"Page {self.page} of a {self.grid_w}x{self.grid_h} grid. "
-                f"{len(live)} elements, {self.occupancy:.0%} full."
+                f"Screen rows {self.view_y:g}-{self.view_y + self.grid_h:g} "
+                f"of a {self.grid_w}x{self.board_h} board. "
+                f"{len(live)} elements, this screen {self.occupancy:.0%} full."
             ),
         ]
         if self.occupancy > 0.55:
-            out.append("  NOTE: page is filling up. Consider `page` or erasing a finished region.")
+            out.append(
+                "  NOTE: this screen is filling up. `pan "
+                f"{self.view_y + self.grid_h:g}` moves to fresh board below -- "
+                "prefer that to erasing, which destroys the lesson as it goes."
+            )
 
         if self.errors:
             out.append(f"ERRORS -- {len(self.errors)} ops did not draw:")

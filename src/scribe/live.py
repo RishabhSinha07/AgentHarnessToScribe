@@ -99,6 +99,7 @@ async def _ws(websocket: WebSocket) -> None:
                 "type": "hello",
                 "topic": session.topic,
                 "grid": [session.canvas.grid_w, session.canvas.grid_h],
+                "finished": session.finished,
                 "ops": "\n".join(session.ops),
             }
         )

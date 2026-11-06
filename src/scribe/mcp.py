@@ -13,6 +13,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import Image, MCPServer
 
+from . import export
 from .canvas import GRID_H, GRID_W, PENS
 from .live import SERVER
 from .session import REGISTRY, Plan
@@ -39,6 +40,14 @@ A lesson, not a tour of a diagram:
    continuing.
 6. scribe_look only when the report says something is wrong, or at the end to
    check the whole board reads. It costs an image; the report is free.
+7. scribe_finish when the payoff is delivered. The board waits for you
+   otherwise -- it cannot tell thinking from finished.
+8. scribe_export to save the lesson as a board image, a self-contained replay
+   page, and the op-stream.
+
+Erasing is for CORRECTIONS, not for space. Rub out a model you drew wrong on
+purpose, or a mistake. When you simply need more room, `pan` to fresh board --
+everything drawn is kept and exported, and erasing throws it away.
 
 Structure, which is what makes it a lesson:
 - Open on a question, not an answer. Put the hook on the board first and leave
@@ -103,7 +112,11 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
   note    x,y,w <text>           sticky note; wraps its own text
   brace   x,y,h <label>          vertical brace grouping a range
   dash    on|off                 line style for everything after it
-  erase   x,y,w,h <spoken note>  erase a rectangle
+  pan     Y                      scroll to fresh board at row Y. The board
+                                 extends downward; use this instead of erasing
+                                 when you simply need more room.
+  erase   x,y,w,h <spoken note>  erase a rectangle. ONLY for correcting
+                                 something wrong -- never to make space.
   erase   x,y,r <spoken note>    erase a square of radius r
   pen     <{"|".join(sorted(set(PENS)))}>
   board   W H                    declare the board size. First line only.
@@ -300,6 +313,51 @@ def scribe_undo(scenes: int = 1) -> str:
     except LookupError as exc:
         return str(exc)
     return session.undo(max(1, scenes))
+
+
+@mcp.tool()
+def scribe_finish(closing: str = "") -> str:
+    """End the lesson. Call this when you have delivered the payoff.
+
+    The board cannot tell you composing the next scene from you having
+    finished twenty minutes ago, so without this it waits forever.
+
+    Args:
+        closing: An optional last line, spoken as the lesson ends.
+    """
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
+    return session.finish(closing.strip())
+
+
+@mcp.tool()
+def scribe_export(out_dir: str = "") -> str:
+    """Save the lesson: a PNG of the whole board, a replay page, and the ops.
+
+    The replay is self-contained -- it opens in any browser with no server and
+    redraws the lesson with its narration, so it can be sent to someone.
+
+    Args:
+        out_dir: Where to write. Defaults to ~/.scribe/lessons.
+    """
+    try:
+        session = REGISTRY.require_current()
+    except LookupError as exc:
+        return str(exc)
+    if not session.ops:
+        return "Nothing drawn yet."
+
+    paths = export.save_all(session, Path(out_dir) if out_dir else None)
+    return "\n".join(
+        [
+            f"Saved {len(session.ops)} ops from {session.topic!r}:",
+            f"  board   {paths['png']}",
+            f"  replay  {paths['replay']}   (open in a browser; no server needed)",
+            f"  ops     {paths['ops']}",
+        ]
+    )
 
 
 @mcp.tool()

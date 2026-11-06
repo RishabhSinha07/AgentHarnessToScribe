@@ -337,3 +337,45 @@ def test_dash_applies_to_shapes_until_turned_off():
     assert c.dashed
     c.run("dash off")
     assert not c.dashed
+
+
+# --- a board that extends instead of being wiped ----------------------------
+
+
+def test_pan_grows_the_board_downward():
+    c = Canvas()
+    assert c.panels == 1
+    c.run("pan 36")
+    assert c.panels == 2
+    assert c.board_h == c.grid_h * 2
+    assert c.view_y == 36
+
+
+def test_drawing_below_the_fold_grows_the_board():
+    c = Canvas()
+    c.run('box 4,40 10,3 "below"')
+    assert c.panels == 2
+    assert not c.errors
+
+
+def test_the_board_is_capped():
+    c = Canvas()
+    c.run("pan 10000")
+    assert any("capped" in e for e in c.errors)
+
+
+def test_occupancy_measures_the_current_screen_only():
+    """Panning to fresh board should read as empty, not as a full lesson."""
+    c = Canvas()
+    c.run("\n".join(f"box {x},{y} 4,3" for x in range(0, 60, 5) for y in range(0, 33, 4)))
+    assert c.occupancy > 0.5
+    c.run("pan 36")
+    assert c.occupancy < 0.1
+
+
+def test_the_fullness_hint_suggests_panning_not_erasing():
+    c = Canvas()
+    c.run("\n".join(f"box {x},{y} 4,3" for x in range(0, 60, 5) for y in range(0, 33, 4)))
+    hint = c.state_summary()
+    assert "pan" in hint
+    assert "erasing, which destroys" in hint

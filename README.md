@@ -119,6 +119,7 @@ group   x,y,w,h <label>        dashed container with a label tab
 note    x,y,w <text>           sticky note, wraps its own text
 brace   x,y,h <label>          vertical brace over a range
 dash    on|off                 line style for what follows
+pan     <y>                    scroll to fresh board; the surface extends down
 stroke  x1,y1 x2,y2 ...        freehand polyline
 erase   x,y,w,h <spoken note>  erase a rectangle
 pen     ink|red|blue|green|grey
@@ -158,6 +159,8 @@ flagged in the report, with the fix named.
 | `scribe_look()` | A PNG of the board, for the agent's own eyes |
 | `scribe_erase_preview(x,y,w,h)` | What an erase would destroy, before committing |
 | `scribe_undo(scenes)` | Rolls back the last N draw calls and replays |
+| `scribe_finish(closing)` | Ends the lesson, so the board stops waiting |
+| `scribe_export(out_dir)` | Saves the board as PNG, a replay page, and the ops |
 | `scribe_status()` | Topic, ops drawn, viewers connected |
 
 ### Why planning is enforced
@@ -259,6 +262,20 @@ COLLISIONS -- 1 overlapping elements:
 That is a real defect from the first run of the example lesson, caught
 automatically on a re-run. Highlights and freehand are exempt from collision
 checks — they are *meant* to cross things.
+
+## Keeping a lesson
+
+`scribe_export` writes three things to `~/.scribe/lessons`:
+
+| | |
+|---|---|
+| `<topic>.png` | The whole board, every screen of it, as one tall image |
+| `<topic>.html` | A **self-contained replay** — opens in any browser, no server, and redraws the lesson with its narration |
+| `<topic>.json` | The op-stream and the plan behind it |
+
+The replay is the one that matters: it is the thing you can send someone. It
+is also why `pan` exists rather than erasing for space — a lesson that rubs
+itself out as it goes has nothing left to export.
 
 ## Status
 

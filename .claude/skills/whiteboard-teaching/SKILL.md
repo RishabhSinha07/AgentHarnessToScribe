@@ -52,6 +52,7 @@ not have to:
 | A box around related things | `group x,y,w,h "label"` | Dashed container with a label tab; never collides with its contents. |
 | An aside squeezed into the diagram | `note x,y,w "text"` | Sticky note, wraps its own text, stays out of the way. |
 | Erasing a wrong model | `strike "label"` | Keeps the evidence it was there. Pairs with the misconception beat. |
+| Erasing to make room | `pan <y>` | The board extends downward. Everything drawn is kept and exported. |
 
 Icons: db server user cloud queue file clock lock globe gear warning check cross box
 
@@ -72,8 +73,13 @@ through* something, move one of the two or route it by hand with `arrow`.
   describes what is on screen, cut it.
 - **Never narrate your own mistakes.** *"Oops, I rubbed that out"* is tooling
   noise. Fix it silently and keep teaching.
-- **Earn the erase.** Wiping should be a move you planned, not a reaction to
-  running out of room. Plan which region goes, and say why as it goes.
+- **Erase only to correct.** Rub out something that is *wrong* — a model you
+  drew wrong on purpose, or a genuine mistake. Never erase to make space: the
+  whole lesson is kept and exported at the end, and erasing throws it away.
+  When the report says the screen is filling up, `pan` to fresh board below.
+- **Finish properly.** Call `scribe_finish` once the payoff has landed. The
+  board cannot tell you composing the next beat from you having stopped, so
+  without it the viewer waits. Then `scribe_export` to save the lesson.
 - **One idea per line, short lines.** Long sentences stall the drawing while
   the voice catches up.
 - **Give the key moment room.** Not every beat deserves equal weight.

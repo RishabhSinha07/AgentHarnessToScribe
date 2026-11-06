@@ -77,12 +77,14 @@ class Session:
     # Index into `ops` at the start of each draw call, so a scene can be undone.
     marks: list[int] = field(default_factory=list)
     plan: Plan | None = None
+    finished: bool = False
     # Each viewer gets its own queue, so a slow tab cannot stall the others.
     viewers: list[asyncio.Queue[str]] = field(default_factory=list)
 
     # --- drawing -------------------------------------------------------------
     def draw(self, script: str) -> str:
         """Apply a script, push it to every viewer, and report what happened."""
+        self.finished = False
         self.canvas.clear_feedback()
         self.canvas.run(script)
 
@@ -137,6 +139,26 @@ class Session:
             f"Undid {undone} scene(s), dropping {dropped} ops. "
             f"{len(self.ops)} remain.\n" + self.canvas.state_summary(verbose=False)
         )
+
+    def finish(self, closing: str = "") -> str:
+        """Mark the lesson complete and tell the viewers.
+
+        Without this the board cannot tell a model composing the next scene
+        from a lesson that ended ten minutes ago, and sits on "thinking"
+        forever.
+        """
+        self.finished = True
+        if closing:
+            self.narration.append(closing)
+            self.ops.append(f'say "{closing}"')
+            self.broadcast(f'say "{closing}"')
+        for q in list(self.viewers):
+            self._offer_control(q, {"type": "finished"})
+        return f"Lesson marked complete. {len(self.ops)} ops drawn."
+
+    @property
+    def narration(self) -> list[str]:
+        return self.canvas.narration
 
     def reset_viewers(self) -> None:
         """Tell every viewer to clear and replay from scratch."""
