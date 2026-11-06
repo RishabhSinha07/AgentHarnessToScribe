@@ -71,6 +71,36 @@
   .subtitle.on { opacity:1; }
   .subtitle.gesture { background:rgba(46,125,91,.9); }
 
+  /* Shown when playback has caught up to the live head and the agent is still
+     working. Without it the board just sits there and reads as broken. */
+  .thinking {
+    position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+    display:flex; align-items:center; gap:9px;
+    padding:8px 16px 8px 13px; border-radius:999px;
+    background:rgba(20,22,26,.78); color:#F4F5F7;
+    font-family:Archivo,sans-serif; font-size:13px; font-weight:600;
+    letter-spacing:.04em; pointer-events:none;
+    opacity:0; transition:opacity .4s ease;
+  }
+  .thinking.on { opacity:1; }
+  .nib { width:9px; height:9px; border-radius:50% 50% 50% 2px;
+    background:var(--accent); transform:rotate(-45deg);
+    animation:nib 1.5s ease-in-out infinite; }
+  @keyframes nib {
+    0%,100% { transform:rotate(-45deg) translate(0,0); opacity:.55; }
+    50%     { transform:rotate(-45deg) translate(2px,-2px); opacity:1; }
+  }
+  .dots { display:inline-flex; gap:3px; }
+  .dots i { width:3px; height:3px; border-radius:50%; background:currentColor;
+    opacity:.3; animation:dot 1.4s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay:.18s; }
+  .dots i:nth-child(3) { animation-delay:.36s; }
+  @keyframes dot { 0%,60%,100% { opacity:.3; } 30% { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .nib, .dots i { animation:none; opacity:1; }
+    .thinking { transition:none; }
+  }
+
   /* Chrome refuses speechSynthesis and audio playback until the page has had
      a real user gesture. Without this the lesson runs silently with no hint
      that a single click would fix it. */
@@ -191,6 +221,10 @@
     <div class="board">
       <canvas id="board" width="1536" height="864"></canvas>
       <div class="subtitle" id="caption"><span id="captionText"></span></div>
+      <div class="thinking" id="thinking" aria-live="polite">
+        <span class="nib"></span>
+        <span id="thinkingText">thinking</span><span class="dots"><i></i><i></i><i></i></span>
+      </div>
       <button class="gate" id="gate" type="button">
         <span class="gate-icon">▶</span>
         <span class="gate-label">Start lesson</span>
@@ -691,7 +725,13 @@
   function appendOps(src) {
     const fresh = parse(src);
     for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
-    if (fresh.length) { renderLog(); if (following) setPlaying(true); }
+    if (fresh.length) {
+      renderLog();
+      idleSince = null;
+      thinkingEl.classList.remove("on");
+      speech.warmFrom(time);          // fetch audio before playback reaches it
+      if (following) setPlaying(true);
+    }
     return fresh.length;
   }
 
@@ -1057,6 +1097,24 @@
       this.audio = el;
     },
 
+    /** Warm the next few spoken lines from a given point in the timeline.
+     *
+     *  Only the line after the current one used to be fetched, so the very
+     *  first sound of a lesson paid the full round trip -- the board drew in
+     *  silence and the voice arrived late.
+     */
+    warmFrom(t, count = 2) {
+      if (this.engine === "browser") return;
+      let found = 0;
+      for (let i = 0; i < ops.length && found < count; i++) {
+        if (starts[i] + duration(ops[i]) < t) continue;
+        const text = ops[i].cmd === "say" ? ops[i].s : ops[i].note;
+        if (!text) continue;
+        this.prefetch(text, ops[i]);
+        found++;
+      }
+    },
+
     /** Warm the next line and learn how long it actually runs.
 
      *  Character count under-predicts speech duration, so an estimated
@@ -1084,6 +1142,14 @@
         this.audio.src = "";
         this.audio = null;
       }
+    },
+
+    /** Is a voice actually still talking right now? */
+    busy() {
+      if (this.engine === "browser") {
+        return this.supported && window.speechSynthesis.speaking;
+      }
+      return !!(this.audio && !this.audio.paused && !this.audio.ended);
     },
 
     stop() {
@@ -1118,11 +1184,11 @@
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
     if (speaking && playing) {
       speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);
-      const next = nextSpoken(speaking.idx);
-      if (next) speech.prefetch(next.text, next.op);
+      speech.warmFrom(time, 2);
     }
 
     // The subtitle shows only while a line is actually being spoken.
+    if (speaking) { thinkingEl.classList.remove("on"); idleSince = null; }
     capEl.classList.toggle("on", !!speaking);
     capEl.classList.toggle("gesture", !!speaking?.gesture);
     if (speaking) capText.textContent = speaking.text;
@@ -1270,9 +1336,43 @@
     gated = false;
     gateEl.hidden = true;
     hasPlayed = true;
+    speech.warmFrom(time);
     setPlaying(true);
   }
   gateEl.addEventListener("click", openGate);
+
+  // --- "the agent is still working" -----------------------------------------
+  // This cannot live in paint(): paint only runs while playing, and the whole
+  // point is to say something while playback has stopped at the live head.
+  const thinkingEl = document.getElementById("thinking");
+  const thinkingText = document.getElementById("thinkingText");
+  let socketOpen = false;
+  let lessonEnded = false;
+  let idleSince = null;
+
+  function tickPresence() {
+    const atHead = total === 0 || time >= total - 1;
+    // Not "waiting" while a voice is still finishing the previous line.
+    const waiting = socketOpen && !lessonEnded && atHead && !gated
+                    && hasPlayed && !speech.busy();
+
+    if (!waiting) {
+      idleSince = null;
+      thinkingEl.classList.remove("on");
+      if (socketOpen && !lessonEnded) setStatus("on", playing ? "drawing" : "live");
+      return;
+    }
+    // Hold off briefly, or the pill flashes in the pause between every scene.
+    if (idleSince === null) idleSince = performance.now();
+    const held = performance.now() - idleSince;
+    if (held > 600) {
+      thinkingText.textContent = total === 0 ? "waiting for the first stroke" : "thinking";
+      thinkingEl.classList.add("on");
+      capEl.classList.remove("on");   // same anchor; never both at once
+      setStatus("on", "thinking");
+    }
+  }
+  setInterval(tickPresence, 200);
 
   // --- live feed ------------------------------------------------------------
   const statusEl = document.getElementById("status");
@@ -1290,7 +1390,10 @@
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${location.host}/ws?s=${encodeURIComponent(sid)}`);
 
-    ws.addEventListener("open", () => setStatus("on", "live"));
+    ws.addEventListener("open", () => {
+      socketOpen = true; lessonEnded = false;
+      setStatus("on", "live");
+    });
     ws.addEventListener("message", (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.type === "hello") {
@@ -1307,10 +1410,14 @@
         if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);
         replaceOps(msg.ops, true);
       } else if (msg.type === "closed") {
+        lessonEnded = true;
+        thinkingEl.classList.remove("on");
         setStatus("off", "lesson ended");
       }
     });
     ws.addEventListener("close", () => {
+      socketOpen = false;
+      thinkingEl.classList.remove("on");
       setStatus("off", "disconnected");
       // The agent may simply be between scenes; keep trying.
       setTimeout(connect, 2000);

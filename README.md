@@ -198,6 +198,12 @@ spends an image on `scribe_look` when the text says something is wrong.
   rectangle would clip, since the eraser is blunt by design.
 - **The board opens itself**, and the server picks a free port rather than
   handing out a URL that never loads.
+- **The wait is visible.** A lesson is drawn in scenes, so the board sits idle
+  while the agent thinks up the next one. It says so, with a `thinking`
+  indicator and a status that moves between *drawing*, *thinking* and *live* —
+  a still board with a frozen clock reads as broken.
+- **Narration is fetched ahead of playback.** The first spoken line used to pay
+  a full round trip while the board drew in silence.
 - **Pointing is not guesswork.** `highlight "<label>"` sizes the ring from the
   target's own box, because an agent cannot see how wide a box rendered. The
   same applies to `connect`, `fill` and `strike`: all take labels, and the
