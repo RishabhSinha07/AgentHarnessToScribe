@@ -115,3 +115,51 @@ def test_reset_frame_carries_the_grid():
     s.undo()
     msg = json.loads(q.get_nowait()[1:])
     assert msg["grid"] == [40, 30]
+
+
+# --- content must not go missing --------------------------------------------
+
+
+def test_a_failed_op_does_not_drop_a_different_good_one():
+    """Error line numbers count every source line; ops skip blanks and
+    comments. Mapping one onto the other dropped the wrong op."""
+    s = Session("t")
+    s.draw(
+        "# a comment, as every real lesson has\n"
+        "\n"
+        'box 4,8 10,3 "first"\n'
+        "box 1,2\n"  # the broken one
+        'say "middle"\n'
+        'box 20,8 10,3 "last"'
+    )
+    assert s.ops == ['box 4,8 10,3 "first"', 'say "middle"', 'box 20,8 10,3 "last"']
+
+
+def test_a_broken_op_is_never_broadcast():
+    s = Session("t")
+    s.draw('# lead comment\n\nbox 1,2\nsay "fine"')
+    assert "box 1,2" not in s.ops
+    assert 'say "fine"' in s.ops
+
+
+def test_comments_and_blanks_never_reach_the_viewer():
+    s = Session("t")
+    s.draw('# note\n\n   \nbox 4,8 6,3 "only this"\n')
+    assert s.ops == ['box 4,8 6,3 "only this"']
+
+
+def test_every_accepted_op_reaches_the_viewer():
+    s = Session("t")
+    s.draw(
+        "# header\n"
+        "\n"
+        'text 2,2 "title"\n'
+        "pen blue\n"
+        'box 4,8 8,3 "a"\n'
+        "dash on\n"
+        'box 4,14 8,3 "b"\n'
+        "dash off\n"
+        'say "done"'
+    )
+    assert s.ops == s.canvas.accepted
+    assert len(s.ops) == 7  # every real op, none of the chrome

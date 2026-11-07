@@ -765,12 +765,32 @@
     paint();
   }
 
-  /** Rebuild start times, e.g. once a line's real audio duration is known. */
+  /** Rebuild start times, e.g. once a line's real audio duration is known.
+   *
+   *  The clock has to be re-anchored to CONTENT, not left at its millisecond
+   *  value. A real audio duration is usually shorter than the estimate, so
+   *  every later start shifts earlier; leaving the clock where it was slides
+   *  it past whole ops, which are then never drawn and never spoken. That is
+   *  the "it sometimes skips" symptom.
+   */
   function recomputeTimeline() {
-    const atHead = time >= total - 1;
+    const atHead = total > 0 && time >= total - 1;
+
+    // Where are we, in op + fraction? Measured against the OLD timings, which
+    // are still in `starts` -- duration() already reports the new ones.
+    let curIdx = -1, curFrac = 0;
+    for (let i = 0; i < ops.length; i++) {
+      if (starts[i] > time) break;
+      const oldDur = (i + 1 < ops.length ? starts[i + 1] : total) - starts[i];
+      curIdx = i;
+      curFrac = oldDur > 0 ? Math.min(1, (time - starts[i]) / oldDur) : 1;
+    }
+
     total = 0;
     for (let i = 0; i < ops.length; i++) { starts[i] = total; total += duration(ops[i]); }
+
     if (atHead) time = total;
+    else if (curIdx >= 0) time = starts[curIdx] + curFrac * duration(ops[curIdx]);
   }
 
   /** Where the camera is at time `t`.

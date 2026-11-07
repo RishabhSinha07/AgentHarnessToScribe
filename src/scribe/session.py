@@ -88,21 +88,9 @@ class Session:
         self.canvas.clear_feedback()
         self.canvas.run(script)
 
-        # Only ops the canvas accepted reach the viewer. Broadcasting a line
-        # that failed to parse would have the student hear narration the agent
-        # never recorded, and `scribe_look` would show a board nobody is seeing.
-        bad = {
-            int(m.split(":")[0].removeprefix("line "))
-            for m in self.canvas.errors
-            if m.startswith("line ")
-        }
-        lines, n = [], 0
-        for raw in script.splitlines():
-            if not raw.strip() or raw.strip().startswith("#"):
-                continue
-            n += 1
-            if n not in bad:
-                lines.append(raw)
+        # Only ops the canvas accepted reach the viewer. Ask the canvas which
+        # those were -- do not infer it from the error messages.
+        lines = list(self.canvas.accepted)
 
         self.marks.append(len(self.ops))
         self.ops.extend(lines)

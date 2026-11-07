@@ -70,3 +70,13 @@ def test_page_declares_its_charset():
     """An exported replay is served by whatever static host the user has, and
     most send no charset -- the arrows and dashes render as mojibake."""
     assert '<meta charset="utf-8">' in VIEWER
+
+
+def test_timeline_recompute_reanchors_the_clock():
+    """Real audio is shorter than the estimate, so later starts shift earlier.
+    Leaving the clock at its millisecond value slides it past whole ops, which
+    are then never drawn and never spoken."""
+    block = VIEWER[VIEWER.index("function recomputeTimeline") :]
+    block = block[: block.index("\n  }")]
+    assert "curIdx" in block and "curFrac" in block
+    assert "oldDur" in block, "the old duration must come from starts[], not duration()"

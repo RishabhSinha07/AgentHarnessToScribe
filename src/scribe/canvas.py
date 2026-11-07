@@ -1107,11 +1107,21 @@ class Canvas:
         return OpResult(True, cmd)
 
     def run(self, script: str) -> list[str]:
-        """Apply a whole script, collecting errors rather than stopping."""
+        """Apply a whole script, collecting errors rather than stopping.
+
+        `accepted` is the authoritative list of ops that actually drew. The
+        caller must not try to work that out from the error text: `apply`
+        numbers every source line while a caller counting "real" ops skips
+        blanks and comments, and the two disagree the moment a lesson has
+        either -- which silently drops a good op and broadcasts a bad one.
+        """
+        self.accepted = []
         for i, line in enumerate(script.splitlines(), 1):
             res = self.apply(line)
             if not res.ok:
                 self.errors.append(f"line {i}: {res.detail}  <- {line.strip()!r}")
+            elif res.detail != "skip":
+                self.accepted.append(line)
         return self.errors
 
     def render(self, path: Path) -> Path:
