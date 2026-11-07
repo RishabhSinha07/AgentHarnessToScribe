@@ -184,6 +184,15 @@ make.
 The plan comes back with a layout budget, so the board is divided before any
 ink lands.
 
+Every `scribe_draw` also returns a **layout map** — a coarse text picture of
+the screen. The collision check can tell you two boxes overlap; it cannot tell
+you the board is a scatter of marks beside an unrelated sentence. The map
+shows crammed bands, empty regions, and rings floating in open space.
+
+It is still not a substitute for looking, which is why `scribe_look` is
+advised after every beat rather than held back. A board can report perfectly
+clean and illustrate nothing.
+
 `scribe_draw` returns collisions **as text on every call**. That is the central
 design choice: the agent is told about an overlap cheaply, in words, and only
 spends an image on `scribe_look` when the text says something is wrong.

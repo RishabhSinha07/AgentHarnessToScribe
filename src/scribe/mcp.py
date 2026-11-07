@@ -1,9 +1,11 @@
 """MCP adapter: lets any MCP client drive the whiteboard.
 
-Design note -- `scribe_draw` returns errors, collisions and occupancy as text
-on every call. That is deliberate: the agent learns about an overlap cheaply,
-in words, and only needs `scribe_look` (which costs an image) when the text
-report says something is actually wrong.
+Design note -- `scribe_draw` returns errors, collisions, occupancy and a
+coarse layout map as text on every call, so most problems are caught without
+spending an image. But the text can only report what it can measure: it will
+happily say "no collisions" about a board that illustrates nothing. Judging
+whether the picture supports what was said needs eyes, so `scribe_look` is
+advised after every beat rather than held back for emergencies.
 """
 
 from __future__ import annotations
@@ -38,8 +40,11 @@ A lesson, not a tour of a diagram:
 5. READ THE REPORT from every scribe_draw. It names collisions and failed ops.
    A collision means something is now unreadable: erase and redraw before
    continuing.
-6. scribe_look only when the report says something is wrong, or at the end to
-   check the whole board reads. It costs an image; the report is free.
+6. scribe_look after each beat. The report catches errors and collisions and
+   sketches the layout, but it cannot tell you whether the drawing means
+   anything -- a board of random marks reports "no collisions". Look, and ask
+   one question: does this picture show what I just said? If not, fix the
+   picture or drop the claim.
 7. scribe_finish when the payoff is delivered. The board waits for you
    otherwise -- it cannot tell thinking from finished.
 8. scribe_export to save the lesson as a board image, a self-contained replay
@@ -48,6 +53,20 @@ A lesson, not a tour of a diagram:
 Erasing is for CORRECTIONS, not for space. Rub out a model you drew wrong on
 purpose, or a mistake. When you simply need more room, `pan` to fresh board --
 everything drawn is kept and exported, and erasing throws it away.
+
+Make the picture carry the claim:
+- Never state a count the board does not show. "32 conflict points" beside
+  eight scattered rings teaches nothing and quietly tells the learner the
+  drawing is decoration. Draw all 32, or pick the smaller example you can
+  draw honestly -- two cars and the one point where they meet.
+- Every mark needs a referent. A ring means "this one"; a cluster of rings in
+  the middle of a diagram means nothing. Place each one where the thing it
+  marks actually is.
+- Respect the geometry you drew. If you have drawn roads, a vehicle path must
+  run along them, not diagonally through the kerb. The layout map in the
+  report shows you where your own lines are.
+- Use the whole board. Content crammed into one band with two thirds blank
+  reads as unfinished; the layout map makes that obvious at a glance.
 
 Structure, which is what makes it a lesson:
 - Open on a question, not an answer. Put the hook on the board first and leave
@@ -265,8 +284,10 @@ def scribe_draw(ops: str) -> str:
 def scribe_look() -> Image | str:
     """Look at the board. Returns a PNG of the canvas as it stands.
 
-    Use after scribe_draw reports a collision, or when checking that a layout
-    reads well. Costs an image, so prefer the text report when it is clean.
+    Use after every beat. The text report cannot tell you whether the drawing
+    means anything -- only whether it parsed and nothing overlaps. Ask of the
+    image: does this show what I just claimed? A board that reports clean can
+    still be a scatter of marks beside an unrelated sentence.
     """
     try:
         session = REGISTRY.require_current()

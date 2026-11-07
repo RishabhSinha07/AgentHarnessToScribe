@@ -17,8 +17,8 @@ exists to fix.
 2. **`scribe_plan(...)` before any ink.** `scribe_draw` refuses until you have.
 3. `scribe_reference()` before your first draw, if you have not read it.
 4. Draw a **beat**: 5–15 ops, interleaving `say` with the drawing.
-5. **Read the report.** Fix anything it flags. Then the next beat.
-6. `scribe_look()` at the end to check the whole board reads well.
+5. **Read the report.** Fix anything it flags.
+6. **`scribe_look()` and actually look.** Then the next beat.
 
 ## Plan first, and plan an argument
 
@@ -65,6 +65,37 @@ path through a diagram, or the half of a system you are currently discussing.
 coordinates.** That is deliberate: the canvas knows where things are and how
 big they rendered, and you do not. If the report says a connector *passes
 through* something, move one of the two or route it by hand with `arrow`.
+
+## The picture has to carry the claim
+
+This is the failure mode that makes a lesson worthless, and the report will
+not catch it. A board reading *"32 conflict points"* beside eight rings
+scattered in the middle passes every check — nothing overlapped, nothing
+failed to parse — and teaches nothing. Worse, it tells the learner the drawing
+is decoration, so they stop looking at it.
+
+- **Never state a count the board does not show.** Draw all 32, or choose the
+  smaller example you can draw honestly: two cars and the single point where
+  they meet. The small honest version teaches better anyway.
+- **Every mark needs a referent.** A ring means *this one*. A cluster of rings
+  in open space means nothing. Put each where the thing it marks actually is.
+- **Respect the geometry you already drew.** If there are roads on the board, a
+  vehicle path runs along them, not diagonally through the kerb.
+- **Use the whole board.** Everything in one band with two thirds blank reads
+  as unfinished.
+
+The report includes a **layout map** — a coarse text picture of the current
+screen. Read it. It shows crammed bands, empty regions, and marks sitting in
+open space, none of which the collision check can see:
+
+```
+  |      ~~~~~~~~~~~~~~~~~~~                    |
+  |            >>>   OO OOO                     |
+  |>>>>>>>>>>>>>>>>>>OOOO>O>>>>>>>>>>>>>>>>>>>> |
+```
+
+Then `scribe_look()` and ask one question: **does this show what I just
+said?** If not, fix the picture or drop the sentence.
 
 ## Narration rules
 

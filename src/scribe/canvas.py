@@ -51,6 +51,26 @@ TINTS: dict[str, tuple[int, int, int]] = {
 
 SHADOW = (224, 222, 215)  # a single soft offset, not a gradient
 
+# Minimap glyphs. MAP_RANK orders them so a box wins over a stroke crossing it.
+MAP_GLYPH = {
+    "stroke": "~",
+    "arrow": ">",
+    "connect": ">",
+    "pan": " ",
+    "text": "-",
+    "group": ":",
+    "brace": "}",
+    "note": "N",
+    "circle": "O",
+    "highlight": "O",
+    "strike": "X",
+    "box": "#",
+    "ellipse": "#",
+    "icon": "@",
+    "erase": " ",
+}
+MAP_RANK = ["~", ":", "}", ">", "-", "O", "X", "N", "#", "@"]
+
 # A box labelled "Database" is a box. A cylinder is a database. Pictograms are
 # the cheapest way for a board to stop looking like a wireframe.
 ICONS = [
@@ -158,6 +178,9 @@ class Element:
     # redraw over them, so a clipped element must not report that redraw as
     # a collision with itself.
     clipped: bool = False
+    # For line-like elements: the actual route, so a diagonal arrow is not
+    # reported as a filled rectangle the size of its bounding box.
+    path: list[tuple[float, float]] | None = None
 
     @property
     def solid(self) -> bool:
@@ -249,7 +272,7 @@ class Canvas:
             self._draw.line([self._jitter(a), self._jitter(b)], fill=color, width=width)
 
     # --- bookkeeping --------------------------------------------------------
-    def _add(self, kind, label, x0, y0, x1, y1, transparent=False) -> Element:
+    def _add(self, kind, label, x0, y0, x1, y1, transparent=False, path=None) -> Element:
         """Record an element, flagging it if it falls outside the board."""
         el = Element(
             kind,
@@ -260,6 +283,7 @@ class Canvas:
             max(y0, y1),
             page=self.page,
             transparent=transparent,
+            path=path,
         )
 
         # Drawing past the edge used to be silent -- the op "succeeded", the ink
@@ -300,7 +324,9 @@ class Canvas:
             self._rough_line(a, b, color=color or self.pen)
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
-        self._add("stroke", "", min(xs), min(ys), max(xs), max(ys), transparent=True)
+        self._add(
+            "stroke", "", min(xs), min(ys), max(xs), max(ys), transparent=True, path=list(pts)
+        )
 
     def box(self, x, y, w, h, label: str = "") -> None:
         c = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
@@ -324,7 +350,7 @@ class Canvas:
         for sign in (+1, -1):
             tip = (b[0] - 14 * math.cos(ang + sign * 0.45), b[1] - 14 * math.sin(ang + sign * 0.45))
             self._rough_line(b, tip, width=2, color=self.pen)
-        self._add("arrow", label, x1, y1, x2, y2, transparent=True)
+        self._add("arrow", label, x1, y1, x2, y2, transparent=True, path=[(x1, y1), (x2, y2)])
         if label:
             lx, ly = self._dodge_label((x1 + x2) / 2, (y1 + y2) / 2 - 0.7, label)
             self.text(lx, ly, label, center=True, _log=False)
@@ -516,6 +542,7 @@ class Canvas:
             max(p[0] for p in pts),
             max(p[1] for p in pts),
             transparent=True,
+            path=list(pts),
         )
         if label:
             lx, ly = (pts[0][0] + pts[-1][0]) / 2, (pts[0][1] + pts[-1][1]) / 2
@@ -1129,6 +1156,63 @@ class Canvas:
         self._img.save(path)
         return path
 
+    def minimap(self, cols: int = 56, rows: int = 14) -> str:
+        """A coarse picture of the current screen, in text.
+
+        The report could say "no collisions" about a board where everything is
+        crammed into one band and two thirds is blank, because nothing it
+        measured was wrong. This is the cheap channel for "does the layout
+        actually look like anything" -- the agent cannot see the canvas, and
+        an image every turn is the expensive answer to the same question.
+        """
+        top, bottom = self.view_y, self.view_y + self.grid_h
+        grid = [[" "] * cols for _ in range(rows)]
+
+        def put(cx: int, cy: int, glyph: str) -> None:
+            if not (0 <= cx < cols and 0 <= cy < rows):
+                return
+            cur = grid[cy][cx]
+            if cur == " " or MAP_RANK.index(glyph) >= MAP_RANK.index(cur):
+                grid[cy][cx] = glyph
+
+        for e in self.live:
+            glyph = MAP_GLYPH.get(e.kind, "#")
+            if glyph == " " or e.y1 < top or e.y0 > bottom:
+                continue
+            if e.path:
+                for a, b in itertools.pairwise(e.path):
+                    steps = max(2, int(math.hypot(b[0] - a[0], b[1] - a[1]) * 2))
+                    for i in range(steps + 1):
+                        f = i / steps
+                        put(
+                            int((a[0] + (b[0] - a[0]) * f) / self.grid_w * cols),
+                            int((a[1] + (b[1] - a[1]) * f - top) / self.grid_h * rows),
+                            glyph,
+                        )
+                continue
+
+            x0 = int(e.x0 / self.grid_w * cols)
+            x1 = max(x0, int(e.x1 / self.grid_w * cols) - 1)
+            y0 = int((e.y0 - top) / self.grid_h * rows)
+            y1 = max(y0, int((e.y1 - top) / self.grid_h * rows) - 1)
+            for cy in range(y0, y1 + 1):
+                for cx in range(x0, x1 + 1):
+                    # Outline only for big shapes, so they do not become blocks.
+                    edge = cy in (y0, y1) or cx in (x0, x1)
+                    if glyph in "#@" and not edge and (x1 - x0) > 1 and (y1 - y0) > 1:
+                        continue
+                    put(cx, cy, glyph)
+
+        legend = "  # box  @ icon  - text  > arrow  ~ stroke  O ring  : group  N note"
+        body = "\n".join("  |" + "".join(r) + "|" for r in grid)
+        return (
+            f"Layout of rows {top:g}-{bottom:g} "
+            f"(each cell is ~{self.grid_w / cols:.1f}x{self.grid_h / rows:.1f} units):\n"
+            + body
+            + "\n"
+            + legend
+        )
+
     def state_summary(self, verbose: bool = True) -> str:
         """What the agent reads back after a scene.
 
@@ -1161,6 +1245,9 @@ class Canvas:
             out += [f"  - {w}" for w in self.wiped]
         if not (self.errors or self.collisions):
             out.append("No errors, no collisions.")
+
+        out.append("")
+        out.append(self.minimap())
 
         if verbose:
             out.append("Elements:")

@@ -379,3 +379,42 @@ def test_the_fullness_hint_suggests_panning_not_erasing():
     hint = c.state_summary()
     assert "pan" in hint
     assert "erasing, which destroys" in hint
+
+
+# --- the layout map ---------------------------------------------------------
+
+
+def test_minimap_is_in_every_report():
+    c = Canvas()
+    c.run('box 4,8 10,3 "a"')
+    assert "Layout of rows" in c.state_summary(verbose=False)
+
+
+def test_minimap_traces_a_diagonal_rather_than_filling_its_box():
+    """An arrow is a line. Painting its bounding box reports a slab."""
+    c = Canvas()
+    c.run("arrow 0,0 64,36")
+    rows = [r for r in c.minimap().splitlines() if r.startswith("  |")]
+    filled = sum(ch == ">" for r in rows for ch in r)
+    assert filled < 120, "a single diagonal must not read as a filled region"
+    # ...and it should genuinely run corner to corner.
+    assert ">" in rows[0] and ">" in rows[-1]
+
+
+def test_minimap_shows_an_empty_board_as_empty():
+    c = Canvas()
+    rows = [r for r in c.minimap().splitlines() if r.startswith("  |")]
+    assert all(set(r[3:-1]) <= {" "} for r in rows)
+
+
+def _map_body(c):
+    """Just the drawn rows -- the legend mentions every glyph by name."""
+    return [r for r in c.minimap().splitlines() if r.startswith("  |")]
+
+
+def test_minimap_follows_the_camera():
+    c = Canvas()
+    c.run('box 4,8 10,3 "up here"')
+    assert any("#" in r for r in _map_body(c))
+    c.run("pan 36")
+    assert not any("#" in r for r in _map_body(c)), "previous screen is out of view"
