@@ -22,3 +22,10 @@ output.
 
 `gallery.png` shows the drawing primitives and is referenced by the top-level
 README.
+
+## Video
+
+The published replay uses the browser's built-in voice: it has no server to
+proxy ElevenLabs through. To produce a shareable video with the better voice,
+run the lesson on the live board (`uv run scribe-serve ...`) and use **Record**
+there.

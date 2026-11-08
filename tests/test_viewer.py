@@ -80,3 +80,35 @@ def test_timeline_recompute_reanchors_the_clock():
     block = block[: block.index("\n  }")]
     assert "curIdx" in block and "curFrac" in block
     assert "oldDur" in block, "the old duration must come from starts[], not duration()"
+
+
+# --- video recording --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "needle, why",
+    [
+        ('id="record"', "the record button"),
+        ('id="saveVideo"', "saving needs a real click; a timer-fired a.click() is ignored"),
+        ("captureStream", "video comes from the canvas"),
+        ("createMediaElementSource", "narration is tapped into the recording"),
+        ("createMediaStreamDestination", "and mixed into an audio track"),
+        ("video/mp4", "prefer mp4 so the file plays anywhere"),
+        ("document.body.appendChild(a)", "Firefox ignores a detached anchor"),
+    ],
+)
+def test_recorder_wiring(needle, why):
+    assert needle in VIEWER, f"missing: {why}"
+
+
+def test_recording_requires_a_real_voice():
+    """speechSynthesis exposes no stream, so a browser-voice recording would
+    be silent. Say so rather than handing over a mute file."""
+    assert 'speech.engine === "browser"' in VIEWER
+    assert "cannot be recorded" in VIEWER
+
+
+def test_recording_is_locked_to_real_speed():
+    """Capture is real-time; 4x playback would desynchronise the audio."""
+    assert "if (recorder.active) return;" in VIEWER
+    assert "setSpeed(1)" in VIEWER

@@ -275,6 +275,22 @@ That is a real defect from the first run of the example lesson, caught
 automatically on a re-run. Highlights and freehand are exempt from collision
 checks — they are *meant* to cross things.
 
+## Recording a video
+
+The live board has a **Record** button. It replays the lesson from the start
+at real speed, captures the canvas and the narration together, and hands you
+an MP4 (or WebM, if the browser cannot mux MP4).
+
+It needs an **ElevenLabs voice selected** — not because the browser voice is
+worse, but because `speechSynthesis` exposes no audio stream and cannot be
+captured at all. Recording with it would hand you a silent file, so the button
+refuses and says why.
+
+Capture is real-time: a three-minute lesson takes three minutes, and the speed
+buttons are locked while it runs. When it finishes, a **Save** button appears
+with the file size — that click is doing real work, since a download fired
+from a timer long after the last gesture is silently ignored by the browser.
+
 ## Keeping a lesson
 
 `scribe_export` writes three things to `~/.scribe/lessons`:

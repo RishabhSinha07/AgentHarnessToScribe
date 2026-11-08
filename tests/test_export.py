@@ -66,8 +66,15 @@ def test_the_published_demo_is_current_and_self_contained():
 
     docs = Path(__file__).resolve().parents[1] / "docs" / "index.html"
     html = docs.read_text()
-    for needle in ['<meta charset="utf-8">', 'id="gate"', 'class="narration"',
-                   "cameraAt", "drawIcon", "bootStandalone", "__OPS__"]:
+    for needle in [
+        '<meta charset="utf-8">',
+        'id="gate"',
+        'class="narration"',
+        "cameraAt",
+        "drawIcon",
+        "bootStandalone",
+        "__OPS__",
+    ]:
         assert needle in html, f"demo is stale: missing {needle}"
     hosts = set(re.findall(r"https?://([a-z0-9.-]+)", html))
     assert hosts <= {"fonts.googleapis.com", "fonts.gstatic.com"}, hosts

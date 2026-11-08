@@ -200,6 +200,16 @@
     background:transparent; border-color:transparent; color:var(--good); }
   #follow[aria-pressed="true"]:hover, .voice-btn[aria-pressed="true"]:hover {
     background:var(--surface); border-color:var(--rule); }
+  #saveVideo[hidden] { display:none; }
+  #saveVideo { white-space:nowrap; }
+  .rec-btn { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .rec-dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
+  .rec-btn[aria-pressed="true"] { color:var(--accent); }
+  .rec-btn[aria-pressed="true"] .rec-dot { background:var(--accent);
+    animation:recpulse 1.4s ease-in-out infinite; }
+  @keyframes recpulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) { .rec-dot { animation:none; } }
+
   #fullscreen { font-size:15px; padding:7px 11px; }
   /* In full screen the board fills the glass rather than sitting in a card. */
   .stage:fullscreen { border-radius:0; border:0; display:flex; flex-direction:column;
@@ -252,6 +262,10 @@
       <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
         <option value="browser">Browser voice</option>
       </select>
+      <button id="record" class="ghost rec-btn" title="Record the lesson as a video">
+        <span class="rec-dot"></span><span id="recLabel">Record</span>
+      </button>
+      <button id="saveVideo" class="primary" hidden>Save video</button>
       <button id="fullscreen" class="ghost" title="Full screen (f)">&#9974;</button>
       <button id="logToggle" class="ghost" aria-expanded="false"
               aria-controls="oplog" title="Show the drawing commands">&lt;/&gt;</button>
@@ -1144,6 +1158,7 @@
         this._browser(text, rate);
       };
       el.addEventListener("error", fallback);
+      recorder.tap(el);          // route into the recording, if one is running
       el.play().catch(fallback);
       this.audio = el;
     },
@@ -1256,7 +1271,13 @@
     const dt = Math.min(100, now - last); last = now;
     time += dt * speed;
     // At the live head we idle rather than stop -- more ops may still arrive.
-    if (time >= total) { time = total; playing = false; playBtn.textContent = "Play"; speech.stop(); }
+    if (time >= total) {
+      time = total; playing = false; playBtn.textContent = "Play"; speech.stop();
+      if (recorder.active) {
+        // Let the last syllable and the final frame land before cutting.
+        setTimeout(() => { recorder.stop(); recUI(false); }, 1200);
+      }
+    }
     paint();
     if (playing) pump();
   }
@@ -1307,13 +1328,17 @@
     if (on) { time = total; paint(); }
   }
   followBtn.addEventListener("click", () => setFollowing(!following));
+  function setSpeed(v) {
+    speed = v;
+    document.querySelectorAll(".speed button").forEach(b =>
+      b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === v)));
+    speech.stop();     // re-speaks the current line at the new rate
+    paint();
+  }
   document.querySelectorAll(".speed button").forEach(btn => {
     btn.addEventListener("click", () => {
-      speed = Number(btn.dataset.speed);
-      document.querySelectorAll(".speed button").forEach(b =>
-        b.setAttribute("aria-pressed", String(b === btn)));
-      speech.stop();   // re-speaks the current line at the new rate
-      paint();
+      if (recorder.active) return;   // a recording must stay at real speed
+      setSpeed(Number(btn.dataset.speed));
     });
   });
 
@@ -1367,6 +1392,63 @@
     if (open) { lastActive = -1; syncLog(time); }
   });
 
+  // --- record transport ------------------------------------------------------
+  const recBtn = document.getElementById("record");
+  const recLabel = document.getElementById("recLabel");
+  let recTimer = null;
+
+  function recUI(on) {
+    recBtn.setAttribute("aria-pressed", String(on));
+    recLabel.textContent = on ? "Stop 0:00" : "Record";
+    clearInterval(recTimer);
+    if (on) {
+      recTimer = setInterval(() => {
+        const sec = Math.floor((performance.now() - recorder.startedAt) / 1000);
+        recLabel.textContent = `Stop ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      }, 500);
+    }
+  }
+
+  async function toggleRecord() {
+    if (recorder.active) { recorder.stop(); recUI(false); return; }
+
+    const problem = await recorder.start();
+    if (problem) { recLabel.textContent = "Record"; recBtn.title = problem; alert_(problem); return; }
+
+    // A recording is a performance: from the top, at real speed, no catching up.
+    saveBtn.hidden = true;
+    recorder.blob = null;
+    recUI(true);
+    gated = false; gateEl.hidden = true; hasPlayed = true;
+    setFollowing(false);
+    setSpeed(1);
+    time = 0;
+    speech.stop();
+    paint();
+    setPlaying(true);
+  }
+
+  /** Surface a problem without a modal -- alerts freeze the automation. */
+  function alert_(msg) {
+    capText.textContent = msg;
+    capEl.classList.add("on");
+    setTimeout(() => capEl.classList.remove("on"), 6000);
+  }
+
+  recBtn.addEventListener("click", toggleRecord);
+
+  const saveBtn = document.getElementById("saveVideo");
+  function onRecordingReady(bytes, ext) {
+    const mb = (bytes / 1_048_576).toFixed(1);
+    saveBtn.textContent = `Save ${ext.toUpperCase()} (${mb} MB)`;
+    saveBtn.hidden = bytes === 0;
+    if (!bytes) alert_("The recording came out empty. Try again from the start.");
+  }
+  saveBtn.addEventListener("click", () => {
+    recorder.download();
+    saveBtn.hidden = true;
+  });
+
   const stageEl = document.querySelector(".stage");
   const fsBtn = document.getElementById("fullscreen");
   function toggleFullscreen() {
@@ -1390,6 +1472,114 @@
       else paint();
     });
   }
+
+  // --- recording -------------------------------------------------------------
+  // The canvas gives a video track directly. Audio is harder: speechSynthesis
+  // exposes no stream and cannot be captured at all, so a recording made with
+  // the browser voice would be silent. ElevenLabs narration arrives as same
+  // origin <audio>, which Web Audio can tap -- hence the requirement.
+  const recorder = {
+    rec: null,
+    chunks: [],
+    ctx: null,
+    dest: null,
+    tapped: new WeakSet(),
+    startedAt: 0,
+
+    /** Best container this browser can actually mux. */
+    mime() {
+      const want = [
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",   // shareable anywhere
+        "video/mp4",
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ];
+      return want.find((m) => MediaRecorder.isTypeSupported?.(m)) || "";
+    },
+
+    get active() {
+      return !!this.rec && this.rec.state === "recording";
+    },
+
+    ensureGraph() {
+      if (this.ctx) return;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new Ctx();
+      this.dest = this.ctx.createMediaStreamDestination();
+    },
+
+    /** Route one narration clip to the speakers AND into the recording.
+     *  createMediaElementSource detaches the element from default output, so
+     *  it has to be reconnected or the lesson plays silently. */
+    tap(el) {
+      if (!this.ctx || this.tapped.has(el)) return;
+      try {
+        const src = this.ctx.createMediaElementSource(el);
+        src.connect(this.ctx.destination);
+        src.connect(this.dest);
+        this.tapped.add(el);
+      } catch {
+        /* already tapped, or not same-origin: it still plays, just unrecorded */
+      }
+    },
+
+    async start() {
+      const type = this.mime();
+      if (!window.MediaRecorder || !type) {
+        return "This browser cannot record video.";
+      }
+      if (speech.engine === "browser") {
+        return "Pick an ElevenLabs voice first -- browser speech cannot be recorded, "
+             + "and the video would have no sound.";
+      }
+
+      this.ensureGraph();
+      await this.ctx.resume().catch(() => {});
+
+      const stream = new MediaStream([
+        ...cv.captureStream(30).getVideoTracks(),
+        ...this.dest.stream.getAudioTracks(),
+      ]);
+      this.chunks = [];
+      this.rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 4_000_000 });
+      this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
+      this.rec.onstop = () => this.finish(type);
+      this.rec.start(1000);
+      this.startedAt = performance.now();
+      return null;
+    },
+
+    stop() {
+      if (this.active) this.rec.stop();
+    },
+
+    /** Hold the finished file. Downloading it needs a real click.
+     *
+     *  Recording stops on a timer once the lesson ends, which is far from any
+     *  user gesture -- a programmatic a.click() there is simply ignored, so
+     *  the file vanished silently. The save button is the gesture. */
+    finish(type) {
+      this.blob = new Blob(this.chunks, { type });
+      this.ext = type.startsWith("video/mp4") ? "mp4" : "webm";
+      this.chunks = [];
+      onRecordingReady(this.blob.size, this.ext);
+    },
+
+    download() {
+      if (!this.blob) return;
+      const name = (topicEl.textContent || "scribe-lesson")
+        .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "scribe-lesson";
+      const url = URL.createObjectURL(this.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}.${this.ext}`;
+      document.body.appendChild(a);     // Firefox ignores a detached anchor
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    },
+  };
 
   // --- autoplay gate ---------------------------------------------------------
   const gateEl = document.getElementById("gate");
