@@ -1,0 +1,37 @@
+# The published demo. Regenerate docs/index.html with:
+#   uv run python -m scribe.build_demo
+board 64 36
+
+text 3,2.5 "Why is the first visit always the slow one?"
+say "A question with a more interesting answer than it looks."
+
+icon user 9,13 6 "you"
+icon server 31,13 6 "origin"
+icon db 53,13 6 "database"
+say "Your browser asks a server, the server asks a database. Nothing exotic."
+
+connect "you" "origin" "~80ms"
+connect "origin" "database" "~2ms"
+say "Notice the numbers. The hop across the ocean costs forty times the hop across the room."
+
+text 3,22 "And that round trip only bought you the HTML."
+box 8,25 11,2.4 "HTML"
+box 21,28 11,2.4 "then CSS"
+box 34,31 11,2.4 "then JS"
+say "Each file has to arrive before the browser knows to ask for the next one."
+highlight "then JS" "By here you have paid for the crossing four times over."
+
+pan 36
+text 3,39 "So the obvious fix:"
+box 7,43 24,3.2 "buy faster internet"
+say "Almost everyone reaches for this one."
+strike "buy faster internet" "It does not help, and it is worth knowing why."
+text 3,49 "Bandwidth is how WIDE the pipe is. This is how LONG it is."
+say "A wider pipe moves more at once. It does not shorten the ocean."
+
+icon globe 12,57 6 "edge"
+icon user 40,57 6 "visitor"
+connect "visitor" "edge" "~8ms"
+note 3,64 30 "Second visit is fast because nothing travels. The files are already down the road."
+say "So you do not speed up the journey. You move the destination closer."
+say "That is a CDN, and that is the whole idea."

@@ -23,9 +23,12 @@ it means, and erase what it got wrong.
 *The richer primitives: icons instead of labelled boxes, elbow-routed
 connectors, groups, tints, strike-outs and notes.*
 
-**[▶ Watch it draw itself](https://rishabhsinha07.github.io/AgentHarnessToScribe/)** — the same lesson
-played back stroke by stroke, narrated aloud. Nothing to install.
-(Runs from `docs/`; enable GitHub Pages on `main` / `/docs` to serve it.)
+**[▶ Watch a lesson draw itself](https://rishabhsinha07.github.io/AgentHarnessToScribe/)** — two
+minutes on why your first page load is slow, drawn stroke by stroke and
+narrated aloud. Nothing to install.
+
+Rebuild it with `uv run python -m scribe.build_demo`; it is a baked copy of
+the viewer, so it goes stale otherwise.
 
 ---
 

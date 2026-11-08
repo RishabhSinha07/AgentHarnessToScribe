@@ -1,13 +1,24 @@
-# Showcase
+# The published demo
 
-`index.html` is the public demo — a **self-contained** replay of a lesson Claude drew — no server,
-no build step, no network beyond Google Fonts. Open it in a browser, or serve
-this directory with GitHub Pages for a public demo link:
+`index.html` is the demo served at
+<https://rishabhsinha07.github.io/AgentHarnessToScribe/>, via
+*Settings -> Pages -> Deploy from a branch -> `main` / `/docs`*.
 
-> Settings → Pages → Source: *Deploy from a branch* → `main` / `/docs`
+It is **self-contained**: one recorded op-stream baked into the page, no
+server, no network beyond Google Fonts. Open it from disk and it plays.
 
-It bakes one recorded op-stream into the page. The live version
-(`uv run scribe-serve`) streams ops over a WebSocket instead, but uses the same
-drawing engine — progressive strokes, voice, scrubbing, the lot.
+## Rebuilding it
 
-`preview.png` is the finished board, used in the top-level README.
+It is a baked copy of the viewer, so it goes stale silently every time the
+viewer is fixed. Do not hand-edit it:
+
+```bash
+uv run python -m scribe.build_demo
+```
+
+That re-renders `index.html`, `preview.png` and `lesson.json` from
+`examples/first_load.ops` using the current code. Edit the lesson, not the
+output.
+
+`gallery.png` shows the drawing primitives and is referenced by the top-level
+README.

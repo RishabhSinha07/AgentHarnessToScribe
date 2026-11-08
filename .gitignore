@@ -11,9 +11,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Rendered output
+# Rendered output. Everything under docs/ is published, so keep it.
 *.png
-!docs/preview.png
+!docs/*.png
 
 # macOS
 .DS_Store

@@ -1,4 +1,5 @@
-<title>Scribe — live demo</title>
+<meta charset="utf-8">
+<title>Scribe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap">
@@ -57,13 +58,56 @@
   .board { position:relative; background:var(--paper); }
   canvas { display:block; width:100%; height:auto; }
 
-  .caption { min-height:74px; display:flex; align-items:center; gap:14px;
-    padding:16px 22px; border-top:1px solid var(--rule); background:var(--surface); }
-  .caption-dot { width:8px; height:8px; border-radius:50%; background:var(--accent);
-    flex:none; opacity:0; transition:opacity .25s; }
-  .caption.speaking .caption-dot { opacity:1; }
-  .caption-text { font-size:19px; line-height:1.45; color:var(--ink); text-wrap:pretty; }
-  .caption-text.idle { color:var(--muted); font-style:italic; }
+  /* Narration gets its own strip below the board. It used to float over the
+     canvas, covering whatever was drawn at the bottom -- which is exactly
+     where a lesson puts its payoff. Fixed height, so nothing shifts. */
+  .narration {
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    min-height:48px; padding:8px 20px;
+    border-top:1px solid var(--rule); background:var(--sunken);
+  }
+  .narration-text {
+    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.35;
+    color:var(--ink); text-align:center; text-wrap:pretty;
+    opacity:0; transition:opacity .3s ease;
+  }
+  .narration.on .narration-text { opacity:1; }
+  .narration.gesture .narration-text { color:var(--good); }
+
+  .thinking { display:none; align-items:center; gap:9px;
+    font-family:Archivo,sans-serif; font-size:13px; font-weight:600;
+    letter-spacing:.04em; color:var(--muted); }
+  .thinking.on { display:inline-flex; }
+  .nib { width:9px; height:9px; border-radius:50% 50% 50% 2px;
+    background:var(--accent); transform:rotate(-45deg);
+    animation:nib 1.5s ease-in-out infinite; }
+  @keyframes nib {
+    0%,100% { transform:rotate(-45deg) translate(0,0); opacity:.55; }
+    50%     { transform:rotate(-45deg) translate(2px,-2px); opacity:1; }
+  }
+  .dots { display:inline-flex; gap:3px; }
+  .dots i { width:3px; height:3px; border-radius:50%; background:currentColor;
+    opacity:.3; animation:dot 1.4s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay:.18s; }
+  .dots i:nth-child(3) { animation-delay:.36s; }
+  @keyframes dot { 0%,60%,100% { opacity:.3; } 30% { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .nib, .dots i { animation:none; opacity:1; }
+    .narration-text { transition:none; }
+  }
+
+  /* Chrome refuses speechSynthesis and audio playback until the page has had
+     a real user gesture. Without this the lesson runs silently with no hint
+     that a single click would fix it. */
+  .gate { position:absolute; inset:0; width:100%; display:flex; gap:10px;
+    flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(252,251,247,.86); border:0; border-radius:0; cursor:pointer;
+    font-family:Archivo,sans-serif; color:#1A1D21; }
+  .gate[hidden] { display:none; }
+  .gate-icon { font-size:46px; line-height:1; color:var(--accent); }
+  .gate-label { font-size:19px; font-weight:600; }
+  .gate-sub { font-size:13px; color:#697385; }
+  @media (prefers-reduced-motion: reduce) { .subtitle { transition:none; } }
 
   .controls { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     padding:14px 22px; border-top:1px solid var(--rule); background:var(--sunken); }
@@ -82,7 +126,12 @@
     color:var(--accent); }
   .voice-btn[aria-pressed="true"] { background:var(--good-dim); border-color:var(--good); color:var(--good); }
   .voice-btn[hidden] { display:none; }
-  .caption-dot.gesture { background:var(--good); }
+  .voice-picker { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    padding:8px 10px; border-radius:7px; border:1px solid var(--rule);
+    background:var(--surface); color:var(--ink); cursor:pointer; max-width:150px; }
+  .voice-picker[hidden] { display:none; }
+  .voice-error { font-family:Archivo,sans-serif; font-size:12px; font-weight:600;
+    color:var(--accent); max-width:40ch; }
 
   .oplog { max-height:150px; overflow-y:auto; padding:12px 22px 16px;
     border-top:1px solid var(--rule); background:var(--surface);
@@ -122,47 +171,110 @@
   footer { margin-top:72px; padding-top:22px; border-top:1px solid var(--rule);
     font-family:Archivo,sans-serif; font-size:13px; color:var(--muted); }
   :focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
+
+  .wrap { padding:20px 24px 28px; max-width:1240px; }
+  .topline { display:flex; align-items:baseline; justify-content:space-between;
+    gap:16px; margin-bottom:12px; flex-wrap:wrap; }
+  .topic { font-family:Archivo,sans-serif; font-size:19px; font-weight:600;
+    letter-spacing:-.01em; margin:0; color:var(--ink); }
+  .status { display:inline-flex; align-items:center; gap:7px;
+    font-family:Archivo,sans-serif; font-size:11px; font-weight:600;
+    letter-spacing:.11em; text-transform:uppercase; color:var(--muted); }
+  .status-dot { width:7px; height:7px; border-radius:50%; background:var(--muted);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--muted) 22%, transparent); }
+  .status.on .status-dot { background:var(--good);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
+  .status.off .status-dot { background:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+  /* The board is the page. Everything else should sit back. */
+  .stage { margin-top:0; border-radius:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.08), 0 18px 48px -16px rgba(0,0,0,.28); }
+  .board { border-bottom:1px solid var(--rule); }
+
+  .controls { gap:9px; padding:12px 16px; flex-wrap:nowrap; overflow-x:auto; }
+  button.ghost { background:transparent; border-color:transparent; color:var(--muted); }
+  button.ghost:hover { background:var(--surface); border-color:var(--rule); color:var(--ink); }
+  .spacer { flex:1 1 12px; }
+  #follow[aria-pressed="true"], .voice-btn[aria-pressed="true"] {
+    background:transparent; border-color:transparent; color:var(--good); }
+  #follow[aria-pressed="true"]:hover, .voice-btn[aria-pressed="true"]:hover {
+    background:var(--surface); border-color:var(--rule); }
+  #fullscreen { font-size:15px; padding:7px 11px; }
+  /* In full screen the board fills the glass rather than sitting in a card. */
+  .stage:fullscreen { border-radius:0; border:0; display:flex; flex-direction:column;
+    height:100vh; background:var(--ground); }
+  .stage:fullscreen .board { flex:1; display:flex; align-items:center;
+    justify-content:center; overflow:hidden; }
+  .stage:fullscreen canvas { width:auto; height:auto; max-width:100%; max-height:100%; }
+  #logToggle { font-family:"JetBrains Mono",monospace; font-size:13px; padding:8px 11px; }
+  #logToggle[aria-expanded="true"] { color:var(--accent); background:var(--surface);
+    border-color:var(--rule); }
+  .oplog[hidden] { display:none; }
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Scribe &middot; live demo</p>
-  <h1>Watch an agent teach</h1>
-  <p class="standfirst">Claude wrote the drawing commands for this lesson one at a time, narrating as it went. Press play: the board draws itself, speaks, points at what it means, and rubs out its own mistakes &mdash; none of which a finished diagram can do.</p>
+  <div class="topline">
+    <h1 class="topic" id="topic">No lesson open</h1>
+    <span class="status" id="status"><span class="status-dot"></span><span id="statusText">connecting</span></span>
+  </div>
 
   <div class="stage">
-    <div class="board"><canvas id="board" width="1040" height="780"></canvas></div>
-    <div class="caption" id="caption">
-      <span class="caption-dot"></span>
-      <span class="caption-text idle" id="captionText">Press play to watch the lesson draw itself.</span>
+    <div class="board">
+      <canvas id="board" width="1536" height="864"></canvas>
+      <button class="gate" id="gate" type="button">
+        <span class="gate-icon">▶</span>
+        <span class="gate-label">Start lesson</span>
+        <span class="gate-sub">Browsers need a click before they will speak</span>
+      </button>
+    </div>
+    <div class="narration" id="caption">
+      <span class="thinking" id="thinking" aria-live="polite">
+        <span class="nib"></span>
+        <span id="thinkingText">thinking</span><span class="dots"><i></i><i></i><i></i></span>
+      </span>
+      <span class="narration-text" id="captionText"></span>
     </div>
     <div class="controls">
       <button class="primary" id="play">Play</button>
-      <button id="restart">Restart</button>
+      <button id="restart" class="ghost">Replay</button>
       <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" aria-label="Scrub through the lesson">
       <span class="clock" id="clock">0:00 / 0:00</span>
-      <button id="voice" aria-pressed="true" class="voice-btn">Voice on</button>
       <span class="speed">
         <button data-speed="0.5">0.5&times;</button>
         <button data-speed="1" aria-pressed="true">1&times;</button>
         <button data-speed="2">2&times;</button>
         <button data-speed="4">4&times;</button>
       </span>
+      <span class="spacer"></span>
+      <button id="follow" class="ghost" aria-pressed="true">Following</button>
+      <button id="voice" aria-pressed="true" class="voice-btn ghost">Voice on</button>
+      <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
+        <option value="browser">Browser voice</option>
+      </select>
+      <button id="fullscreen" class="ghost" title="Full screen (f)">&#9974;</button>
+      <button id="logToggle" class="ghost" aria-expanded="false"
+              aria-controls="oplog" title="Show the drawing commands">&lt;/&gt;</button>
     </div>
-    <div class="oplog" id="oplog"></div>
+    <div class="oplog" id="oplog" hidden></div>
   </div>
-
-  <footer>Scribe &middot; <a href="https://github.com/RishabhSinha07/AgentHarnessToScribe">source on GitHub</a></footer>
 </div>
-<script>window.__OPS__ = "text 11,1.5 \"How a neural network learns\"\nsay \"Let's start with the shape of the thing. It's just layers of small units.\"\n\ntext 4.5,4.5 \"Input\"\nbox 5,7 3,2.5 \"x1\"\nbox 5,12 3,2.5 \"x2\"\nbox 5,17 3,2.5 \"x3\"\nsay \"On the left, your inputs. Three numbers describing one example.\"\n\ntext 16.5,2.5 \"Hidden\"\nbox 17,5 3,2.5 \"h1\"\nbox 17,10 3,2.5 \"h2\"\nbox 17,15 3,2.5 \"h3\"\nbox 17,20 3,2.5 \"h4\"\nsay \"In the middle, a hidden layer. These are the units that learn features.\"\n\ntext 28.5,9.5 \"Output\"\nbox 29,12 3.5,2.5 \"y\"\nsay \"On the right, one output. The prediction.\"\n\nstroke 8,8.25 17,6.25\nstroke 8,8.25 17,11.25\nstroke 8,8.25 17,16.25\nstroke 8,8.25 17,21.25\nstroke 8,13.25 17,6.25\nstroke 8,13.25 17,11.25\nstroke 8,13.25 17,16.25\nstroke 8,13.25 17,21.25\nstroke 8,18.25 17,6.25\nstroke 8,18.25 17,11.25\nstroke 8,18.25 17,16.25\nstroke 8,18.25 17,21.25\nsay \"Every input connects to every hidden unit. That's the mesh.\"\n\nstroke 20,6.25 29,13.25\nstroke 20,11.25 29,13.25\nstroke 20,16.25 29,13.25\nstroke 20,21.25 29,13.25\nsay \"And every hidden unit feeds the output.\"\n# --- correction: \"Hidden\" ran into the title. Clear the band and rewrite both.\nerase 18,2.2 3 \"Rubbing out that label -- it was crowding the title.\"\ntext 11,1.5 \"How a neural network learns\"\ntext 17,3.8 \"Hidden\"\n\n# --- focus: pick one unit to open up\ncircle 18.5,11.25 3 \"Circling h2 here -- this is the one we'll open up.\"\nsay \"Every one of these units does the same small job. Let's open up h2.\"\n# --- repair: that erase clipped the top off h1. Redraw it.\nbox 17,5 3,2.5 \"h1\"\nsay \"Oops, I rubbed out the top of h1 there. Putting it back.\"\n\n# --- the zoom: what one unit actually does\ntext 1.5,23.3 \"Inside h2: multiply, add, squash\"\nsay \"Here is the whole job of a single unit. Three steps, that's all.\"\n\ntext 3.5,25.2 \"x1\"\ntext 3.5,26.6 \"x2\"\ntext 3.5,28 \"x3\"\narrow 5.5,25.2 12.6,26 \"w1\"\narrow 5.5,26.6 12.6,26.5 \"w2\"\narrow 5.5,28 12.6,27 \"w3\"\nsay \"Each incoming number is multiplied by a weight. The weights are what the network learns.\"\n\nbox 13,25 4.5,3 \"sum\"\nsay \"Add all three products together.\"\n\narrow 17.5,26.5 21,26.5\nbox 21,25 5.5,3 \"ReLU\"\nsay \"Then squash the result. ReLU just means: if it's negative, make it zero.\"\n\narrow 26.5,26.5 31,26.5\ntext 31.5,26.5 \"h2\"\nsay \"And that number is what h2 passes forward.\"\n# tie the prediction to the output box before we clear anything\narrow 32.6,13.25 33.6,13.25\ntext 34,11.5 \"guess\"\ntext 34,13.25 \"0.7\"\ntext 34,15 \"truth\"\ntext 34,16.7 \"1.0\"\nsay \"Say the network guesses 0.7, but the right answer was 1.0.\"\n\n# --- wipe the zoom. One rectangle now that erase takes w,h.\nerase 0,22.8 40,8 \"Wiping the close-up now -- we need the room.\"\nsay \"We're done with the close-up, so let me wipe it and use the space.\"\n\ntext 1.5,24.3 \"Learning: compare, then push the error backwards\"\nbox 2,26 5,2.8 \"guess 0.7\"\narrow 7,27.4 9.5,27.4\nbox 9.5,26 5,2.8 \"true 1.0\"\narrow 14.5,27.4 17,27.4\nbox 17,26 6,2.8 \"error 0.3\"\nsay \"Subtract them. That gap, 0.3, is the error.\"\n\narrow 23,27.4 25.5,27.4\nbox 25.5,26 9,2.8 \"nudge the weights\"\nsay \"Now every weight that pushed the guess too low gets nudged up a little.\"\n\narrow 28,25.8 21,23.2 \"backwards\"\nsay \"That nudge travels back through the network, layer by layer. That's backpropagation.\"\nsay \"Do this a few thousand times and the weights stop being random. That's training.\"\n";</script>
+<script>window.__OPS__ = "board 64 36\ntext 3,2.5 \"Why is the first visit always the slow one?\"\nsay \"A question with a more interesting answer than it looks.\"\nicon user 9,13 6 \"you\"\nicon server 31,13 6 \"origin\"\nicon db 53,13 6 \"database\"\nsay \"Your browser asks a server, the server asks a database. Nothing exotic.\"\nconnect \"you\" \"origin\" \"~80ms\"\nconnect \"origin\" \"database\" \"~2ms\"\nsay \"Notice the numbers. The hop across the ocean costs forty times the hop across the room.\"\ntext 3,22 \"And that round trip only bought you the HTML.\"\nbox 8,25 11,2.4 \"HTML\"\nbox 21,28 11,2.4 \"then CSS\"\nbox 34,31 11,2.4 \"then JS\"\nsay \"Each file has to arrive before the browser knows to ask for the next one.\"\nhighlight \"then JS\" \"By here you have paid for the crossing four times over.\"\npan 36\ntext 3,39 \"So the obvious fix:\"\nbox 7,43 24,3.2 \"buy faster internet\"\nsay \"Almost everyone reaches for this one.\"\nstrike \"buy faster internet\" \"It does not help, and it is worth knowing why.\"\ntext 3,49 \"Bandwidth is how WIDE the pipe is. This is how LONG it is.\"\nsay \"A wider pipe moves more at once. It does not shorten the ocean.\"\nicon globe 12,57 6 \"edge\"\nicon user 40,57 6 \"visitor\"\nconnect \"visitor\" \"edge\" \"~8ms\"\nnote 3,64 30 \"Second visit is fast because nothing travels. The files are already down the road.\"\nsay \"So you do not speed up the journey. You move the destination closer.\"\nsay \"That is a CDN, and that is the whole idea.\"";window.__TOPIC__ = "Why your first page load is slow";window.__GRID__ = [64, 36];</script>
 <script>
 (() => {
   "use strict";
 
-  const GRID_W = 40, GRID_H = 30, CELL = 26;
+  let GRID_W = 64, GRID_H = 36;
+  const CELL = 24;
   const PAPER = "#FCFBF7", PEN = "#1C1C20", ACCENT = "#C63C30";
   const PENS = { ink:PEN, red:ACCENT, blue:"#2A56A8", green:"#2E7D5B",
                  grey:"#808895", gray:"#808895" };
   const CHAR_W = 0.52, LINE_H = 1.05;   // grid units, matching canvas.py
+  const TINTS = { ink:"#E8E8EC", red:"#FAE6E4", blue:"#E4EDFC", green:"#E4F4EC",
+                  grey:"#EEF0F3", gray:"#EEF0F3", yellow:"#FCF5D8", none:PAPER };
+  const SHADOW = "#E0DED7";
+  let dashed = false;
+  let viewY = 0;   // top row of the board currently on screen
   let pen = PEN;                         // current pen, reset each render pass
 
   const cv = document.getElementById("board");
@@ -170,9 +282,15 @@
 
   // Back the canvas at device resolution so strokes and handwriting stay crisp,
   // while every draw call below keeps working in logical 1040x780 space.
-  const W = GRID_W * CELL, H = GRID_H * CELL;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  cv.width = W * dpr; cv.height = H * dpr;
+  let W = GRID_W * CELL, H = GRID_H * CELL;
+
+  function sizeBoard(gw, gh) {
+    GRID_W = gw; GRID_H = gh;
+    W = GRID_W * CELL; H = GRID_H * CELL;
+    cv.width = W * dpr; cv.height = H * dpr;
+  }
+  sizeBoard(GRID_W, GRID_H);
 
   // --- deterministic jitter -------------------------------------------------
   // Seeded per (op, call) so a line lands identically on every redraw and the
@@ -184,7 +302,7 @@
     n = Math.imul(n ^ 61, 0x27d4eb2d); n ^= n >>> 15;
     return ((n >>> 0) / 4294967296) * 2 - 1;
   }
-  const px = (x, y) => [x * CELL, y * CELL];
+  const px = (x, y) => [x * CELL, (y - viewY) * CELL];
   const jit = ([x, y], a = 1.6) => [x + rnd() * a, y + rnd() * a];
 
   function roughLine(a, b, width = 3, color = null, t = 1) {
@@ -198,6 +316,28 @@
     }
   }
 
+  function dashLine(a, b, width = 3, color = null, on = 9, off = 7, t = 1) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) * t;
+    if (len < 1) return;
+    const ux = dx / Math.hypot(dx, dy), uy = dy / Math.hypot(dx, dy);
+    ctx.strokeStyle = color || pen; ctx.lineWidth = width; ctx.lineCap = "butt";
+    for (let pos = 0; pos < len; pos += on + off) {
+      const end = Math.min(len, pos + on);
+      ctx.beginPath();
+      ctx.moveTo(a[0] + ux * pos, a[1] + uy * pos);
+      ctx.lineTo(a[0] + ux * end, a[1] + uy * end);
+      ctx.stroke();
+    }
+    ctx.lineCap = "round";
+  }
+
+  /** Honour the current dash state. Use for anything structural. */
+  function line(a, b, width = 3, color = null, t = 1) {
+    if (dashed) dashLine(a, b, width, color, 9, 7, t);
+    else roughLine(a, b, width, color, t);
+  }
+
   // Walk a polyline, consuming progress t across its total length.
   function polyline(pts, t, width = 3, color = null) {
     const segs = [];
@@ -206,6 +346,21 @@
       const a = px(...pts[i]), b = px(...pts[i + 1]);
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       segs.push([a, b, len]); total += len;
+    }
+    let want = total * t;
+    for (const [a, b, len] of segs) {
+      if (want <= 0) break;
+      line(a, b, width, color, Math.min(1, want / len));
+      want -= len;
+    }
+  }
+
+  /** Polyline in raw pixel space, for icon geometry. */
+  function polyPx(pts, t, width = 3, color = null) {
+    const segs = []; let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      segs.push([pts[i], pts[i + 1], len]); total += len;
     }
     let want = total * t;
     for (const [a, b, len] of segs) {
@@ -237,6 +392,7 @@
 
   // --- solid boxes placed so far this pass, for dodging labels --------------
   let solids = [];
+  let labelled = new Map();   // label -> [x0,y0,x1,y1], for `highlight`
   const textBox = (x, y, s, size, center) => {
     const w = s.length * CHAR_W * (size / 20), h = LINE_H * (size / 20);
     const x0 = center ? x - w / 2 : x;
@@ -247,12 +403,187 @@
 
   // Converging arrows share a midpoint, so midpoint labels stack. Step
   // perpendicular until the slot is free; give up rather than wander far.
+  /** Find a labelled element's box, exact match then substring. */
+  function lookup(name) {
+    if (!name) return null;
+    if (labelled.has(name)) return labelled.get(name);
+    const hit = [...labelled.entries()].reverse()
+      .find(([k]) => k.toLowerCase().includes(name.toLowerCase()));
+    return hit ? hit[1] : null;
+  }
+  function labelOf(name) {
+    if (labelled.has(name)) return name;
+    const hit = [...labelled.entries()].reverse()
+      .find(([k]) => k.toLowerCase().includes(name.toLowerCase()));
+    return hit ? hit[0] : "";
+  }
+
+  /** Orthogonal route between two boxes -- mirrors canvas.py connect(). */
+  function elbow(a, b) {
+    const ax = (a[0]+a[2])/2, ay = (a[1]+a[3])/2;
+    const bx = (b[0]+b[2])/2, by = (b[1]+b[3])/2;
+    let pts;
+    if (Math.abs(bx - ax) >= Math.abs(by - ay)) {
+      const start = [bx > ax ? a[2] : a[0], ay], end = [bx > ax ? b[0] : b[2], by];
+      const mid = (start[0] + end[0]) / 2;
+      pts = [start, [mid, ay], [mid, by], end];
+    } else {
+      const start = [ax, by > ay ? a[3] : a[1]], end = [bx, by > ay ? b[1] : b[3]];
+      const mid = (start[1] + end[1]) / 2;
+      pts = [start, [ax, mid], [bx, mid], end];
+    }
+    return pts.filter((p, i) => i === 0 ||
+      Math.abs(p[0] - pts[i-1][0]) > 0.05 || Math.abs(p[1] - pts[i-1][1]) > 0.05);
+  }
+
+  function wrapText(text, width) {
+    const out = []; let cur = "";
+    for (const word of text.split(/\s+/)) {
+      const trial = (cur + " " + word).trim();
+      if (trial.length <= width || !cur) cur = trial;
+      else { out.push(cur); cur = word; }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
   function dodgeLabel(x, y, s, size) {
     for (const step of [0, -1.2, 1.2, -2.4, 2.4, -3.6, 3.6]) {
       const cand = textBox(x, y + step, s, size, true);
       if (!solids.some(o => hits(cand, o, 0.1))) return y + step;
     }
     return y;
+  }
+
+  // --- icons (mirrors canvas.py) ---------------------------------------------
+  const ICONS = ["db","server","user","cloud","queue","file","clock",
+                 "lock","globe","gear","warning","check","cross","box"];
+
+  function ellipsePts(cx, cy, rx, ry, a0 = 0, a1 = Math.PI * 2, steps = 16) {
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * i / steps;
+      out.push(px(cx + rx * Math.cos(a), cy + ry * Math.sin(a)));
+    }
+    return out;
+  }
+  const P = (x, y) => px(x, y);
+
+  function drawIcon(name, x, y, r, h, t) {
+    const poly = (pts, close = false, w = 3) =>
+      polyPx(close ? [...pts, pts[0]] : pts, t, w);
+
+    switch (name) {
+      case "db": {
+        const lid = h * 0.28;
+        poly(ellipsePts(x, y - h + lid, r, lid), true);
+        poly([P(x - r, y - h + lid), P(x - r, y + h - lid)]);
+        poly([P(x + r, y - h + lid), P(x + r, y + h - lid)]);
+        poly(ellipsePts(x, y + h - lid, r, lid, 0, Math.PI, 8));
+        poly(ellipsePts(x, y, r, lid, 0, Math.PI, 8));
+        break;
+      }
+      case "server":
+        for (let i = 0; i < 3; i++) {
+          const top = y - h + i * (2 * h / 3);
+          poly([P(x - r, top), P(x + r, top), P(x + r, top + 2 * h / 3 - 0.15),
+                P(x - r, top + 2 * h / 3 - 0.15)], true);
+          poly([P(x - r * 0.6, top + h / 3), P(x + r * 0.1, top + h / 3)], false, 2);
+        }
+        break;
+      case "user": {
+        const head = r * 0.46;
+        poly(ellipsePts(x, y - h + head * 1.3, head, head), true);
+        poly(ellipsePts(x, y + h, r, h * 0.8, Math.PI, Math.PI * 2, 14));
+        break;
+      }
+      case "cloud": {
+        // Union outline: skip points that fall inside another bump, or the
+        // hidden interior arcs make it read as a row of arches.
+        const base = y + h * 0.5;
+        const bumps = [[x - r * 0.48, r * 0.54, h * 0.6],
+                       [x + r * 0.06, r * 0.56, h * 0.92],
+                       [x + r * 0.58, r * 0.46, h * 0.58]];
+        const inside = (bx, by, skip) => bumps.some(([cx, rx, ry], j) =>
+          j !== skip && ((bx - cx) / rx) ** 2 + ((by - base) / ry) ** 2 < 0.97);
+        bumps.forEach(([cx, rx, ry], i) => {
+          let run = [];
+          for (let k = 0; k <= 40; k++) {
+            const a = Math.PI + Math.PI * k / 40;
+            const bx = cx + rx * Math.cos(a), by = base + ry * Math.sin(a);
+            if (inside(bx, by, i)) { if (run.length > 1) poly(run); run = []; }
+            else run.push(P(bx, by));
+          }
+          if (run.length > 1) poly(run);
+        });
+        poly([P(x - r, base), P(x + r, base)]);
+        break;
+      }
+      case "queue": {
+        poly([P(x - r, y - h * 0.55), P(x + r, y - h * 0.55)]);
+        poly([P(x - r, y + h * 0.55), P(x + r, y + h * 0.55)]);
+        const bw = r * 0.42;
+        for (let i = 0; i < 3; i++) {
+          const left = x - r * 0.85 + i * (bw + r * 0.26);
+          poly([P(left, y - h * 0.3), P(left + bw, y - h * 0.3),
+                P(left + bw, y + h * 0.3), P(left, y + h * 0.3)], true, 2);
+        }
+        break;
+      }
+      case "file": {
+        const fold = r * 0.5;
+        poly([P(x - r, y - h), P(x + r - fold, y - h), P(x + r, y - h + fold),
+              P(x + r, y + h), P(x - r, y + h)], true);
+        poly([P(x + r - fold, y - h), P(x + r - fold, y - h + fold), P(x + r, y - h + fold)]);
+        break;
+      }
+      case "clock":
+        poly(ellipsePts(x, y, r, h * 0.88), true);
+        poly([P(x, y), P(x, y - h * 0.5)], false, 2);
+        poly([P(x, y), P(x + r * 0.6, y + h * 0.18)], false, 2);
+        break;
+      case "lock": {
+        const bodyTop = y - h * 0.05, sr = r * 0.56;
+        poly([P(x - r, bodyTop), P(x + r, bodyTop), P(x + r, y + h), P(x - r, y + h)], true);
+        const shackle = [P(x - sr, bodyTop), P(x - sr, y - h * 0.45)];
+        for (let i = 0; i <= 10; i++) {
+          const a = Math.PI + Math.PI * i / 10;
+          shackle.push(P(x + sr * Math.cos(a), y - h * 0.45 + sr * 0.85 * Math.sin(a)));
+        }
+        shackle.push(P(x + sr, y - h * 0.45), P(x + sr, bodyTop));
+        poly(shackle);
+        poly([P(x, y + h * 0.3), P(x, y + h * 0.62)]);
+        break;
+      }
+      case "globe":
+        poly(ellipsePts(x, y, r, h * 0.88), true);
+        poly(ellipsePts(x, y, r * 0.42, h * 0.88), true);
+        poly([P(x - r, y), P(x + r, y)], false, 2);
+        break;
+      case "gear":
+        poly(ellipsePts(x, y, r * 0.72, h * 0.66), true);
+        poly(ellipsePts(x, y, r * 0.3, h * 0.28), true);
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4;
+          poly([P(x + r * 0.72 * Math.cos(a), y + h * 0.66 * Math.sin(a)),
+                P(x + r * Math.cos(a), y + h * 0.92 * Math.sin(a))], false, 2);
+        }
+        break;
+      case "warning":
+        poly([P(x, y - h), P(x + r, y + h * 0.8), P(x - r, y + h * 0.8)], true);
+        poly([P(x, y - h * 0.35), P(x, y + h * 0.25)]);
+        poly([P(x, y + h * 0.5), P(x, y + h * 0.58)]);
+        break;
+      case "check":
+        poly([P(x - r * 0.8, y), P(x - r * 0.15, y + h * 0.6), P(x + r * 0.9, y - h * 0.7)], false, 4);
+        break;
+      case "cross":
+        poly([P(x - r * 0.75, y - h * 0.7), P(x + r * 0.75, y + h * 0.7)], false, 4);
+        poly([P(x - r * 0.75, y + h * 0.7), P(x + r * 0.75, y - h * 0.7)], false, 4);
+        break;
+      default:
+        poly([P(x - r, y - h), P(x + r, y - h), P(x + r, y + h), P(x - r, y + h)], true);
+    }
   }
 
   // --- op parsing (mirrors canvas.py: accepts "3,4" or "3 4") ---------------
@@ -292,6 +623,8 @@
         ops.push({ cmd, x1, y1, x2, y2, label: label(u), raw: line });
       } else if (cmd === "text") {
         const [[x, y], u] = take(2); ops.push({ cmd, x, y, s: label(u), raw: line });
+      } else if (cmd === "highlight") {
+        ops.push({ cmd, target: args[0] || "", note: args.slice(1).join(" ").trim(), raw: line });
       } else if (cmd === "ellipse") {
         const [[x, y, rx, ry], u] = take(4);
         ops.push({ cmd, x, y, rx, ry, label: label(u), raw: line });
@@ -309,6 +642,42 @@
         }
       } else if (cmd === "pen") {
         ops.push({ cmd, name: (args[0] || "ink").toLowerCase(), raw: line });
+      } else if (cmd === "icon") {
+        const name = (args[0] || "").toLowerCase();
+        const nums = []; let used = 1;
+        for (const tok of args.slice(1)) {
+          if (nums.length >= 3) break;
+          const parts = String(tok).split(",").map(v => v.trim()).filter(Boolean);
+          if (!parts.every(v => !Number.isNaN(parseFloat(v)))) break;
+          parts.forEach(v => nums.push(parseFloat(v))); used++;
+        }
+        const [x, y] = nums;
+        const size = nums.length > 2 ? nums[2] : 4;
+        ops.push({ cmd, name, x, y, size, label: args.slice(used).join(" ").trim(), raw: line });
+      } else if (cmd === "connect") {
+        ops.push({ cmd, from: args[0] || "", to: args[1] || "",
+                   label: args.slice(2).join(" ").trim(), raw: line });
+      } else if (cmd === "fill") {
+        ops.push({ cmd, target: args[0] || "", tint: (args[1] || "yellow").toLowerCase(), raw: line });
+      } else if (cmd === "strike") {
+        ops.push({ cmd, target: args[0] || "", note: args.slice(1).join(" ").trim(), raw: line });
+      } else if (cmd === "group") {
+        const [[x, y, w, h], u] = take(4);
+        ops.push({ cmd, x, y, w, h, label: label(u), raw: line });
+      } else if (cmd === "note") {
+        const [[x, y, w], u] = take(3);
+        ops.push({ cmd, x, y, w, text: label(u), raw: line });
+      } else if (cmd === "brace") {
+        const [[x, y, h], u] = take(3);
+        ops.push({ cmd, x, y, h, label: label(u), raw: line });
+      } else if (cmd === "dash") {
+        ops.push({ cmd, on: !["off","false","0"].includes((args[0]||"on").toLowerCase()), raw: line });
+      } else if (cmd === "pan") {
+        const [[y]] = take(1);
+        ops.push({ cmd, y, raw: line });
+      } else if (cmd === "board") {
+        const [[w, h]] = take(2);
+        ops.push({ cmd, w, h, raw: line });
       } else if (cmd === "page") {
         ops.push({ cmd, title: label(0), raw: line });
       } else if (cmd === "say") {
@@ -320,8 +689,15 @@
 
   // --- timing ---------------------------------------------------------------
   // Draw ops take about as long as the hand would; `say` paces to reading speed.
-  // Roughly how long a voice takes to read n characters at rate 1.
-  const spoken = (n) => 500 + n * 62;
+  // Estimate, used for browser speech and before real audio has loaded.
+  // Measured against ElevenLabs, characters alone under-predict: punctuation
+  // and word shape matter, and the worst case ran ~71ms/char.
+  const estimate = (n) => 550 + n * 70;
+
+  /** How long to hold a spoken line: its real audio duration when we know it. */
+  function spokenOp(op, text) {
+    return op.audioMs ? op.audioMs + 260 : estimate(text.length);
+  }
 
   function duration(op) {
     switch (op.cmd) {
@@ -329,28 +705,123 @@
       case "arrow":  return 520;
       case "text":   return Math.max(320, op.s.length * 42);
       case "stroke": return Math.max(260, (op.pts.length - 1) * 170);
-      case "say":    return spoken(op.s.length);
+      case "say":    return spokenOp(op, op.s);
       // A gesture carrying a note has to stay on screen long enough to say it,
       // or the next line cuts the voice off mid-sentence.
+      case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
+      case "icon":    return 820;
+      case "connect": return op.label ? 640 : 520;
+      case "fill":    return 420;
+      case "strike":  return op.note ? Math.max(560, spokenOp(op, op.note)) : 560;
+      case "group":   return 760;
+      case "note":    return 700;
+      case "brace":   return 520;
+      case "dash":    return 1;      // state change
+      case "pan":     return 900;    // the camera glides, it does not cut
+      case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
-      case "circle": return op.note ? Math.max(780, spoken(op.note.length)) : 780;
-      case "erase":  return op.note ? Math.max(430, spoken(op.note.length)) : 430;
+      case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
+      case "erase":  return op.note ? Math.max(430, spokenOp(op, op.note)) : 430;
       default:       return 200;
     }
   }
 
-  const ops = parse(window.__OPS__);
-  const starts = []; let total = 0;
-  for (const op of ops) { starts.push(total); total += duration(op); }
+  // Live: the op list starts empty and grows as the agent draws.
+  const ops = [];
+  const starts = [];
+  let total = 0;
+
+  function appendOps(src) {
+    const fresh = parse(src);
+    for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
+    if (fresh.length) {
+      renderLog();
+      idleSince = null;
+      thinkingEl.classList.remove("on");
+      speech.warmFrom(time);          // fetch audio before playback reaches it
+      if (following) setPlaying(true);
+    }
+    return fresh.length;
+  }
+
+  let hasPlayed = false;   // has this viewer ever played anything?
+
+  /** Replace the whole lesson with this op stream.
+   *
+   *  `seekToHead` matters: a reconnecting viewer should resume where the
+   *  lesson actually is, but a viewer opening a lesson that was drawn before
+   *  it connected must start at zero -- otherwise the board paints itself
+   *  fully drawn and silent, which is precisely the failure this tool exists
+   *  to fix.
+   */
+  function replaceOps(src, seekToHead) {
+    ops.length = 0; starts.length = 0; total = 0; time = 0;
+    speech.stop();
+    speech.spokenIdx = -1;
+    renderLog();
+    if (src) appendOps(src);
+    if (seekToHead) time = total;
+    paint();
+  }
+
+  /** Rebuild start times, e.g. once a line's real audio duration is known.
+   *
+   *  The clock has to be re-anchored to CONTENT, not left at its millisecond
+   *  value. A real audio duration is usually shorter than the estimate, so
+   *  every later start shifts earlier; leaving the clock where it was slides
+   *  it past whole ops, which are then never drawn and never spoken. That is
+   *  the "it sometimes skips" symptom.
+   */
+  function recomputeTimeline() {
+    const atHead = total > 0 && time >= total - 1;
+
+    // Where are we, in op + fraction? Measured against the OLD timings, which
+    // are still in `starts` -- duration() already reports the new ones.
+    let curIdx = -1, curFrac = 0;
+    for (let i = 0; i < ops.length; i++) {
+      if (starts[i] > time) break;
+      const oldDur = (i + 1 < ops.length ? starts[i + 1] : total) - starts[i];
+      curIdx = i;
+      curFrac = oldDur > 0 ? Math.min(1, (time - starts[i]) / oldDur) : 1;
+    }
+
+    total = 0;
+    for (let i = 0; i < ops.length; i++) { starts[i] = total; total += duration(ops[i]); }
+
+    if (atHead) time = total;
+    else if (curIdx >= 0) time = starts[curIdx] + curFrac * duration(ops[curIdx]);
+  }
+
+  /** Where the camera is at time `t`.
+   *
+   *  Resolved for the whole frame before anything is drawn. Applying pans as
+   *  they are reached mid-loop moves only what comes after them, so the board
+   *  before the pan stays put and the two screens draw on top of each other.
+   */
+  function cameraAt(t) {
+    let from = 0, y = 0;
+    for (let i = 0; i < ops.length; i++) {
+      if (ops[i].cmd !== "pan") continue;
+      if (starts[i] > t) break;
+      const p = Math.min(1, (t - starts[i]) / duration(ops[i]));
+      const eased = p * p * (3 - 2 * p);          // glide, do not cut
+      y = from + (ops[i].y - from) * eased;
+      if (p >= 1) from = ops[i].y;
+    }
+    return y;
+  }
 
   // --- render ---------------------------------------------------------------
   function renderAt(time) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
-    pen = PEN;        // pen state is rebuilt from the op stream each pass
+    pen = PEN;        // pen/dash state is rebuilt from the stream each pass
+    dashed = false;
+    viewY = cameraAt(time);
     solids = [];
+    labelled = new Map();
 
     let speaking = null;   // { text, idx, gesture }
     for (let i = 0; i < ops.length; i++) {
@@ -364,6 +835,7 @@
           const { x, y, w, h } = op;
           polyline([[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]], t);
           solids.push([x, y, x + w, y + h]);
+          if (op.label) labelled.set(op.label, [x, y, x + w, y + h]);
           if (op.label && t > 0.75) drawText(x + w/2, y + h/2, op.label, 20, true, (t-0.75)/0.25);
           break;
         }
@@ -380,12 +852,127 @@
         case "text":
           drawText(op.x, op.y, op.s, 20, false, t);
           solids.push(textBox(op.x, op.y, op.s, 20, false));
+          labelled.set(op.s, textBox(op.x, op.y, op.s, 20, false));
           break;
+        case "highlight": {
+          // The ring is sized from the target's own box, never guessed.
+          const box = labelled.get(op.target)
+            || [...labelled.entries()].reverse()
+                 .find(([k]) => k.toLowerCase().includes(op.target.toLowerCase()))?.[1];
+          if (box) {
+            const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+            const rx = (box[2] - box[0]) / 2 + 0.9, ry = (box[3] - box[1]) / 2 + 0.9;
+            const pts = [];
+            for (let k = 0; k <= 16; k++) {
+              const th = k * Math.PI / 8;
+              pts.push([cx + rx * Math.cos(th), cy + ry * Math.sin(th)]);
+            }
+            polyline(pts, t, 3, ACCENT);
+          }
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
         case "pen": pen = PENS[op.name] || PEN; break;
+        case "dash": dashed = op.on; break;
+        case "pan": break;   // handled by cameraAt(), before anything is drawn
+
+        case "icon": {
+          const r = op.size / 2, h = r * 1.15;
+          drawIcon(op.name, op.x, op.y, r, h, t);
+          const box = [op.x - r, op.y - h, op.x + r, op.y + h + (op.label ? 1.2 : 0)];
+          solids.push(box);
+          labelled.set(op.label || op.name, box);
+          if (op.label && t > 0.75) drawText(op.x, op.y + h + 0.7, op.label, 18, true, (t - 0.75) / 0.25);
+          break;
+        }
+
+        case "connect": {
+          const a = lookup(op.from), b = lookup(op.to);
+          if (a && b) {
+            const pts = elbow(a, b);
+            polyline(pts, t);
+            if (t >= 1) arrowHead(px(...pts[pts.length - 2]), px(...pts[pts.length - 1]), 1);
+            if (op.label && t > 0.7) {
+              const lx = (pts[0][0] + pts[pts.length - 1][0]) / 2;
+              const ly = (pts[0][1] + pts[pts.length - 1][1]) / 2;
+              drawText(lx, dodgeLabel(lx, ly - 0.7, op.label, 18), op.label, 18, true, (t - 0.7) / 0.3);
+            }
+          }
+          break;
+        }
+
+        case "fill": {
+          const box = lookup(op.target);
+          if (box) {
+            const a = px(box[0], box[1]), b = px(box[2], box[3]);
+            ctx.fillStyle = TINTS[op.tint] || TINTS.yellow;
+            // Wipe in, so the tint reads as a deliberate stroke of colour.
+            ctx.fillRect(a[0], a[1], (b[0] - a[0]) * t, b[1] - a[1]);
+            polyline([[box[0],box[1]],[box[2],box[1]],[box[2],box[3]],[box[0],box[3]],[box[0],box[1]]], 1);
+            const lbl = labelOf(op.target);
+            if (lbl) drawText((box[0]+box[2])/2, (box[1]+box[3])/2, lbl, 20, true, 1);
+          }
+          break;
+        }
+
+        case "strike": {
+          const box = lookup(op.target);
+          if (box) {
+            const pad = 0.3;
+            polyline([[box[0]-pad, box[1]-pad], [box[2]+pad, box[3]+pad]], t, 4, ACCENT);
+            polyline([[box[0]-pad, box[3]+pad], [box[2]+pad, box[1]-pad]], t, 4, ACCENT);
+          }
+          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
+          break;
+        }
+
+        case "group": {
+          const was = dashed; dashed = true;
+          polyline([[op.x,op.y],[op.x+op.w,op.y],[op.x+op.w,op.y+op.h],
+                    [op.x,op.y+op.h],[op.x,op.y]], t, 2, PENS.grey);
+          dashed = was;
+          if (op.label && t > 0.6) {
+            const tw = op.label.length * CHAR_W + 0.8;
+            const a = px(op.x + 0.6, op.y - 0.55), b = px(op.x + 0.6 + tw, op.y + 0.55);
+            ctx.fillStyle = PAPER; ctx.fillRect(a[0], a[1], b[0]-a[0], b[1]-a[1]);
+            drawText(op.x + 1.0, op.y, op.label, 17, false, (t - 0.6) / 0.4);
+          }
+          break;
+        }
+
+        case "note": {
+          const lines = wrapText(op.text, Math.max(6, Math.floor(op.w / CHAR_W)));
+          const h = lines.length * LINE_H + 0.9;
+          const a = px(op.x, op.y), b = px(op.x + op.w, op.y + h);
+          ctx.fillStyle = SHADOW; ctx.fillRect(a[0]+5, a[1]+5, b[0]-a[0], b[1]-a[1]);
+          ctx.fillStyle = TINTS.yellow; ctx.fillRect(a[0], a[1], b[0]-a[0], b[1]-a[1]);
+          polyline([[op.x,op.y],[op.x+op.w,op.y],[op.x+op.w,op.y+h],
+                    [op.x,op.y+h],[op.x,op.y]], Math.min(1, t * 1.6), 2, PENS.grey);
+          lines.forEach((ln, k) => {
+            const lineT = Math.max(0, Math.min(1, (t - 0.25 - k * 0.12) / 0.4));
+            if (lineT > 0) drawText(op.x + 0.5, op.y + 0.7 + k * LINE_H, ln, 17, false, lineT);
+          });
+          solids.push([op.x, op.y, op.x + op.w, op.y + h]);
+          break;
+        }
+
+        case "brace": {
+          const mid = op.y + op.h / 2, d = 0.55;
+          polyline([[op.x,op.y],[op.x+d,op.y+0.35],[op.x+d,mid-0.6],
+                    [op.x+d*1.8,mid],[op.x+d,mid+0.6],
+                    [op.x+d,op.y+op.h-0.35],[op.x,op.y+op.h]], t);
+          if (op.label && t > 0.7) drawText(op.x + d*2.4, mid, op.label, 18, false, (t-0.7)/0.3);
+          break;
+        }
+        case "board":
+          // The lesson declares the stage it was written for.
+          if (GRID_W !== op.w || GRID_H !== op.h) sizeBoard(op.w, op.h);
+          break;
         case "page":
           // Wipe to a clean page, then drop any solids from the old one.
           ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
           solids = [];
+          labelled.clear();   // or `highlight` would ring a box from a wiped page
           if (op.title) drawText(1.5, 1.5, op.title, 20, false, t);
           break;
         case "ellipse": {
@@ -396,6 +983,7 @@
           }
           polyline(pts, t);
           solids.push([op.x - op.rx, op.y - op.ry, op.x + op.rx, op.y + op.ry]);
+          if (op.label) labelled.set(op.label, [op.x - op.rx, op.y - op.ry, op.x + op.rx, op.y + op.ry]);
           if (op.label && t > 0.75) drawText(op.x, op.y, op.label, 20, true, (t - 0.75) / 0.25);
           break;
         }
@@ -429,6 +1017,16 @@
     return speaking;
   }
 
+  /** The next line that will be spoken after op `idx`, for prefetching. */
+  function nextSpoken(idx) {
+    for (let i = idx + 1; i < ops.length; i++) {
+      const o = ops[i];
+      if (o.cmd === "say") return { text: o.s, op: o };
+      if (o.note) return { text: o.note, op: o };
+    }
+    return null;
+  }
+
   // --- last spoken line, for when playback sits between `say` ops -----------
   function lastSaid(time) {
     let said = null;
@@ -443,11 +1041,18 @@
 
   // --- op log ---------------------------------------------------------------
   const logEl = document.getElementById("oplog");
-  logEl.innerHTML = ops.map(o => `<div>${o.raw.replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;")}</div>`).join("");
-  const logRows = Array.from(logEl.children);
+  let logRows = [];
   let lastActive = -1;
 
+  function renderLog() {
+    logEl.innerHTML = ops.map(o =>
+      `<div>${o.raw.replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;")}</div>`).join("");
+    logRows = Array.from(logEl.children);
+    lastActive = -1;
+  }
+
   function syncLog(time) {
+    if (logEl.hidden) return;
     let active = -1;
     for (let i = 0; i < ops.length; i++) if (starts[i] <= time) active = i;
     if (active === lastActive) return;
@@ -485,21 +1090,122 @@
       this.voice = all.find(v => v.localService) || all[0];
     },
 
-    say(text, idx, rate) {
-      if (!this.supported || !this.enabled) return;
+    // engine is "browser" or an ElevenLabs voice id.
+    engine: "browser",
+    audio: null,
+    cache: new Map(),
+
+    say(text, idx, rate, op) {
+      if (!this.enabled) return;
       if (idx === this.spokenIdx) return;      // already speaking this line
-      window.speechSynthesis.cancel();
+      this.spokenIdx = idx;
+      if (this.engine === "browser") this._browser(text, rate);
+      else this._remote(text, rate, op);
+    },
+
+    /** Silence BOTH engines. Each start must call this, or switching engines
+     *  mid-lesson leaves the previous one talking over the new one. */
+    _silence() {
+      if (this.supported) window.speechSynthesis.cancel();
+      this._stopAudio();
+    },
+
+    _browser(text, rate) {
+      if (!this.supported) return;
+      this._silence();
       const u = new SpeechSynthesisUtterance(text);
       if (this.voice) u.voice = this.voice;
       // Clamp: above ~3 the synth garbles, and 4x playback would ask for more.
       u.rate = Math.max(0.5, Math.min(3, rate));
       u.pitch = 1;
       window.speechSynthesis.speak(u);
-      this.spokenIdx = idx;
+    },
+
+    url(text) {
+      return `/tts?voice=${encodeURIComponent(this.engine)}&text=${encodeURIComponent(text)}`;
+    },
+
+    _remote(text, rate, op) {
+      this._silence();
+      const el = new Audio(this.url(text));
+      el.playbackRate = Math.max(0.5, Math.min(3, rate));
+      el.addEventListener("loadedmetadata", () => {
+        if (op && Number.isFinite(el.duration) && el.duration > 0 && !op.audioMs) {
+          op.audioMs = el.duration * 1000;
+          recomputeTimeline();
+        }
+      });
+
+      // A failed fetch should not leave the lesson silent -- but `error` and a
+      // rejected play() can both fire for one failure, so fall back only once.
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack || this.audio !== el) return;
+        fellBack = true;
+        this._browser(text, rate);
+      };
+      el.addEventListener("error", fallback);
+      el.play().catch(fallback);
+      this.audio = el;
+    },
+
+    /** Warm the next few spoken lines from a given point in the timeline.
+     *
+     *  Only the line after the current one used to be fetched, so the very
+     *  first sound of a lesson paid the full round trip -- the board drew in
+     *  silence and the voice arrived late.
+     */
+    warmFrom(t, count = 2) {
+      if (this.engine === "browser") return;
+      let found = 0;
+      for (let i = 0; i < ops.length && found < count; i++) {
+        if (starts[i] + duration(ops[i]) < t) continue;
+        const text = ops[i].cmd === "say" ? ops[i].s : ops[i].note;
+        if (!text) continue;
+        this.prefetch(text, ops[i]);
+        found++;
+      }
+    },
+
+    /** Warm the next line and learn how long it actually runs.
+
+     *  Character count under-predicts speech duration, so an estimated
+     *  timeline clips the end of some lines. Loading the audio ahead of time
+     *  gives us the real figure before playback reaches it.
+     */
+    prefetch(text, op) {
+      if (this.engine === "browser" || !text || this.cache.has(text)) return;
+      this.cache.set(text, true);
+      const probe = new Audio(this.url(text));
+      probe.preload = "auto";
+      probe.addEventListener("loadedmetadata", () => {
+        if (op && Number.isFinite(probe.duration) && probe.duration > 0) {
+          op.audioMs = probe.duration * 1000;
+          recomputeTimeline();
+        }
+      });
+      probe.addEventListener("error", () => this.cache.delete(text));
+      probe.load();
+    },
+
+    _stopAudio() {
+      if (this.audio) {
+        this.audio.pause();
+        this.audio.src = "";
+        this.audio = null;
+      }
+    },
+
+    /** Is a voice actually still talking right now? */
+    busy() {
+      if (this.engine === "browser") {
+        return this.supported && window.speechSynthesis.speaking;
+      }
+      return !!(this.audio && !this.audio.paused && !this.audio.ended);
     },
 
     stop() {
-      if (this.supported) window.speechSynthesis.cancel();
+      this._silence();
       this.spokenIdx = -1;
     },
   };
@@ -518,6 +1224,7 @@
   const capText = document.getElementById("captionText");
 
   let time = 0, playing = false, speed = 1, last = 0;
+  let following = true;
 
   const fmt = (ms) => {
     const s = Math.floor(ms / 1000);
@@ -526,47 +1233,81 @@
 
   function paint() {
     const speaking = renderAt(time);
-    const line = speaking ? speaking.text : lastSaid(time);
-    capEl.classList.toggle("speaking", !!speaking);
-    capEl.querySelector(".caption-dot").classList.toggle("gesture", !!speaking?.gesture);
-
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
-    if (speaking && playing) speech.say(speaking.text, speaking.idx, speed);
+    if (speaking && playing) {
+      speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);
+      speech.warmFrom(time, 2);
+    }
 
-    if (line) { capText.textContent = line; capText.classList.remove("idle"); }
-    else { capText.textContent = "Press play to watch and hear the lesson draw itself."; capText.classList.add("idle"); }
+    // The subtitle shows only while a line is actually being spoken.
+    if (speaking) { thinkingEl.classList.remove("on"); idleSince = null; }
+    capEl.classList.toggle("on", !!speaking);
+    capEl.classList.toggle("gesture", !!speaking?.gesture);
+    if (speaking) capText.textContent = speaking.text;
     clock.textContent = `${fmt(time)} / ${fmt(total)}`;
-    scrub.value = String(Math.round((time / total) * 1000));
+    scrub.value = String(total ? Math.round((time / total) * 1000) : 0);
     syncLog(time);
   }
 
+  let rafPending = false;
+
   function frame(now) {
+    rafPending = false;
     if (!playing) return;
     const dt = Math.min(100, now - last); last = now;
     time += dt * speed;
+    // At the live head we idle rather than stop -- more ops may still arrive.
     if (time >= total) { time = total; playing = false; playBtn.textContent = "Play"; speech.stop(); }
     paint();
-    if (playing) requestAnimationFrame(frame);
+    if (playing) pump();
+  }
+
+  /** Ask for exactly one animation frame. Live ops arrive in bursts, and a
+   *  naive requestAnimationFrame per burst stacks loops that each advance the
+   *  clock, so playback races ahead. */
+  function pump() {
+    if (rafPending || !playing) return;
+    rafPending = true;
+    requestAnimationFrame(frame);
   }
 
   function setPlaying(on) {
+    // Starting playback before the gate opens would run the lesson silently.
+    if (on && gated) return;
+    if (on) hasPlayed = true;
     playing = on;
     playBtn.textContent = on ? "Pause" : "Play";
     if (!on) speech.stop();
     if (on) {
-      if (time >= total) time = 0;
+      // Restart from the top only when replaying a finished lesson, never when
+      // sitting at the live head waiting for the agent's next scene.
+      if (!following && time >= total) time = 0;
       last = performance.now();
-      requestAnimationFrame(frame);
+      pump();
     }
   }
 
-  playBtn.addEventListener("click", () => setPlaying(!playing));
-  restartBtn.addEventListener("click", () => { time = 0; speech.stop(); paint(); setPlaying(true); });
+  playBtn.addEventListener("click", () => {
+    if (gated) { openGate(); return; }
+    hasPlayed = true;
+    setPlaying(!playing);
+  });
+  restartBtn.addEventListener("click", () => { time = 0; speech.stop(); setFollowing(false); paint(); setPlaying(true); });
   scrub.addEventListener("input", () => {
     time = (Number(scrub.value) / 1000) * total;
     speech.stop();   // jumping mid-sentence should cut the voice, not trail it
+    setFollowing(false);   // scrubbing back means you want to look, not keep up
     paint();
   });
+
+  const followBtn = document.getElementById("follow");
+  function setFollowing(on) {
+    following = on;
+    followBtn.setAttribute("aria-pressed", String(on));
+    followBtn.textContent = on ? "Following" : "Follow";
+    if (on) { time = total; paint(); }
+  }
+  followBtn.addEventListener("click", () => setFollowing(!following));
   document.querySelectorAll(".speed button").forEach(btn => {
     btn.addEventListener("click", () => {
       speed = Number(btn.dataset.speed);
@@ -577,10 +1318,71 @@
     });
   });
 
+  // Offer ElevenLabs voices when the server has a key; browser speech otherwise.
+  const picker = document.getElementById("voicePicker");
+  fetch("/voices").then(r => r.json()).then(info => {
+    if (!info.elevenlabs || !info.voices.length) {
+      // Distinguish "no key" from "the key is wrong" -- telling someone to set
+      // the key they just set is the least useful message available.
+      if (info.error) {
+        picker.title = `ElevenLabs unavailable: ${info.error}`;
+        const warn = document.createElement("span");
+        warn.className = "voice-error";
+        warn.textContent = "ElevenLabs: " + info.error;
+        picker.parentNode.insertBefore(warn, picker.nextSibling);
+      } else {
+        picker.title = "Set ELEVENLABS_API_KEY on the server for more voices";
+      }
+      return;
+    }
+    for (const v of info.voices) {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.textContent = v.name;
+      picker.appendChild(opt);
+    }
+    if (info.default) {
+      picker.value = info.default;
+      // /voices resolves after playback may already have begun on the browser
+      // voice. Silence it, or the next line starts on top of it.
+      speech.stop();
+      speech.engine = info.default;
+    }
+  }).catch(() => { /* no server voices; browser speech still works */ });
+
+  picker.addEventListener("change", () => {
+    speech.stop();
+    speech.cache.clear();
+    speech.engine = picker.value;
+    for (const op of ops) delete op.audioMs;   // a new voice has new timings
+    recomputeTimeline();
+    paint();
+  });
+
+  // The command log is for debugging a lesson, not for watching one.
+  const logToggle = document.getElementById("logToggle");
+  logToggle.addEventListener("click", () => {
+    const open = logEl.hidden;
+    logEl.hidden = !open;
+    logToggle.setAttribute("aria-expanded", String(open));
+    if (open) { lastActive = -1; syncLog(time); }
+  });
+
+  const stageEl = document.querySelector(".stage");
+  const fsBtn = document.getElementById("fullscreen");
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else stageEl.requestFullscreen?.().catch(() => {});
+  }
+  fsBtn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === "f") toggleFullscreen();
+    else if (e.key === " ") { e.preventDefault(); playBtn.click(); }
+  });
+
   const voiceBtn = document.getElementById("voice");
-  if (!speech.supported) {
-    voiceBtn.hidden = true;   // no synth in this browser; captions still carry the lesson
-  } else {
+  {
     voiceBtn.addEventListener("click", () => {
       speech.enabled = !speech.enabled;
       voiceBtn.setAttribute("aria-pressed", String(speech.enabled));
@@ -590,9 +1392,131 @@
     });
   }
 
+  // --- autoplay gate ---------------------------------------------------------
+  const gateEl = document.getElementById("gate");
+  let gated = true;          // nothing plays until the user has clicked once
+
+  function openGate() {
+    if (!gated) return;
+    gated = false;
+    gateEl.hidden = true;
+    hasPlayed = true;
+    speech.warmFrom(time);
+    setPlaying(true);
+  }
+  gateEl.addEventListener("click", openGate);
+
+  // --- "the agent is still working" -----------------------------------------
+  // This cannot live in paint(): paint only runs while playing, and the whole
+  // point is to say something while playback has stopped at the live head.
+  const thinkingEl = document.getElementById("thinking");
+  const thinkingText = document.getElementById("thinkingText");
+  let socketOpen = false;
+  let lessonEnded = false;
+  let idleSince = null;
+  const IDLE_GIVE_UP = 90_000;   // after this, stop claiming the agent is busy
+
+  function tickPresence() {
+    const atHead = total === 0 || time >= total - 1;
+    // Not "waiting" while a voice is still finishing the previous line.
+    const waiting = socketOpen && !lessonEnded && atHead && !gated
+                    && hasPlayed && !speech.busy();
+
+    if (!waiting) {
+      idleSince = null;
+      thinkingEl.classList.remove("on");
+      if (socketOpen && !lessonEnded) setStatus("on", playing ? "drawing" : "live");
+      return;
+    }
+    // Hold off briefly, or the pill flashes in the pause between every scene.
+    if (idleSince === null) idleSince = performance.now();
+    const held = performance.now() - idleSince;
+    if (held > 600 && held < IDLE_GIVE_UP) {
+      thinkingText.textContent = total === 0 ? "waiting for the first stroke" : "thinking";
+      thinkingEl.classList.add("on");
+      setStatus("on", "thinking");
+    } else if (held >= IDLE_GIVE_UP) {
+      // An agent that never calls scribe_finish should not leave the board
+      // spinning indefinitely. Stop claiming it is thinking.
+      thinkingEl.classList.remove("on");
+      setStatus("on", "idle");
+    }
+  }
+  setInterval(tickPresence, 200);
+
+  // --- live feed ------------------------------------------------------------
+  const statusEl = document.getElementById("status");
+  const statusText = document.getElementById("statusText");
+  const topicEl = document.getElementById("topic");
+
+  function setStatus(state, text) {
+    statusEl.classList.toggle("on", state === "on");
+    statusEl.classList.toggle("off", state === "off");
+    statusText.textContent = text;
+  }
+
+  /** An exported replay: ops are baked in and there is nothing to connect to. */
+  function bootStandalone() {
+    topicEl.textContent = window.__TOPIC__ || "Scribe lesson";
+    if (window.__GRID__) sizeBoard(window.__GRID__[0], window.__GRID__[1]);
+    lessonEnded = true;          // a recording is complete by definition
+    setStatus("on", "recording");
+    document.getElementById("follow").hidden = true;
+    replaceOps(window.__OPS__ || "", false);
+  }
+
+  function connect() {
+    const sid = new URLSearchParams(location.search).get("s") || "";
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${proto}//${location.host}/ws?s=${encodeURIComponent(sid)}`);
+
+    ws.addEventListener("open", () => {
+      socketOpen = true; lessonEnded = false;
+      setStatus("on", "live");
+    });
+    ws.addEventListener("message", (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "hello") {
+        topicEl.textContent = msg.topic || "Untitled lesson";
+        if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);   // board size is the server's call
+        lessonEnded = !!msg.finished;
+        // hello is a FULL state sync, and arrives again on every reconnect.
+        // Appending here would duplicate the whole lesson and speak it twice.
+        // Catch up only if we have already been watching.
+        replaceOps(msg.ops || "", hasPlayed);
+      } else if (msg.type === "ops") {
+        appendOps(msg.ops);
+      } else if (msg.type === "reset") {
+        // The agent undid a scene; drop everything and replay the survivors.
+        if (msg.grid) sizeBoard(msg.grid[0], msg.grid[1]);
+        replaceOps(msg.ops, true);
+      } else if (msg.type === "finished") {
+        lessonEnded = true;
+        thinkingEl.classList.remove("on");
+        setStatus("on", "complete");
+      } else if (msg.type === "closed") {
+        lessonEnded = true;
+        thinkingEl.classList.remove("on");
+        setStatus("off", "lesson ended");
+      }
+    });
+    ws.addEventListener("close", () => {
+      socketOpen = false;
+      thinkingEl.classList.remove("on");
+      setStatus("off", "disconnected");
+      // The agent may simply be between scenes; keep trying.
+      setTimeout(connect, 2000);
+    });
+    ws.addEventListener("error", () => setStatus("off", "error"));
+  }
+
   // Canvas text needs the handwriting face loaded, or the first paint
   // silently falls back and every glyph shifts once it arrives.
-  function boot() { paint(); }
+  function boot() {
+    paint();
+    if (typeof window.__OPS__ === "string") bootStandalone();
+    else connect();
+  }
   if (document.fonts && document.fonts.load) {
     Promise.all([document.fonts.load('600 20px Caveat'), document.fonts.ready])
       .then(boot).catch(boot);
