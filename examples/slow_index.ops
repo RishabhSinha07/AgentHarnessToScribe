@@ -1,0 +1,40 @@
+# A ~70s lesson, written to be recorded and shared.
+# The arc: real pain -> obvious fix -> the cost nobody mentions -> the trade.
+board 64 36
+
+text 3,2.5 "You added an index. The app got slower. How?"
+say "You added one index, and the app got slower. That is not a bug."
+
+# --- the pain that makes you reach for an index
+icon db 10,13 7 "users"
+text 20,10 "5,000,000 rows"
+text 20,13 "WHERE email = ..."
+arrow 19,16 30,16 "scan every row"
+icon clock 36,16 6 "slow"
+say "Finding one row means reading all five million. That is the pain."
+highlight "slow" "Everybody has felt this one."
+
+# --- the obvious fix
+text 3,24 "So you add an index:"
+box 3,27 18,3 "CREATE INDEX ..."
+icon file 32,27.5 5 "sorted copy"
+connect "CREATE INDEX ..." "sorted copy" "builds"
+say "An index is a second copy of that column, kept in sorted order."
+say "Now the lookup is a handful of comparisons. Genuinely faster."
+
+# --- the turn: what nobody puts in the tutorial
+pan 36
+text 3,39 "But look at what every write now has to do."
+icon file 10,48 6 "INSERT"
+icon db 28,48 7 "table"
+icon file 48,48 6 "index"
+connect "INSERT" "table" "write 1"
+connect "table" "index" "write 2"
+say "One insert. Two structures to keep true. The sort order is not free."
+highlight "index" "This is the write you did not know you were buying."
+
+text 3,58 "Five indexes on that table means six writes per insert."
+box 3,62 26,3 "just add more indexes"
+strike "just add more indexes" "So this is where it stops being free."
+note 33,62 28 "An index is not a setting. It is a second structure you now own, and pay for on every write."
+say "Reads got faster. Writes got slower. You did not break it -- you traded."

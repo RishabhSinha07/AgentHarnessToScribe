@@ -826,6 +826,60 @@
     return y;
   }
 
+  /** Burn the spoken line into the frame, for recording only.
+   *
+   *  captureStream() takes the canvas and nothing else, so the narration strip
+   *  below the board never reaches the video. Social feeds autoplay muted, so
+   *  a recording without on-screen text is a silent cartoon.
+   */
+  function drawCaptionOverlay(text) {
+    if (!text) return;
+    const pad = 26, fontSize = 30, lineH = 40;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = `400 ${fontSize}px "Source Serif 4", Georgia, serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Wrap to the board width before deciding how tall the band is.
+    const maxW = W - pad * 6;
+    const lines = [];
+    let cur = "";
+    for (const word of text.split(/\s+/)) {
+      const trial = cur ? `${cur} ${word}` : word;
+      if (ctx.measureText(trial).width <= maxW || !cur) cur = trial;
+      else { lines.push(cur); cur = word; }
+    }
+    if (cur) lines.push(cur);
+
+    const bandH = lines.length * lineH + pad;
+    const top = H - bandH - pad;
+    const boxW = Math.min(
+      maxW + pad * 2,
+      Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2,
+    );
+
+    ctx.fillStyle = "rgba(20, 22, 26, 0.84)";
+    roundRect(W / 2 - boxW / 2, top, boxW, bandH, 18);
+    ctx.fill();
+
+    ctx.fillStyle = "#F4F5F7";
+    lines.forEach((line, i) => {
+      ctx.fillText(line, W / 2, top + pad / 2 + lineH / 2 + i * lineH);
+    });
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
   // --- render ---------------------------------------------------------------
   function renderAt(time) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1252,6 +1306,10 @@
       speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);
       speech.warmFrom(time, 2);
     }
+
+    // Only the recording gets a burned-in caption; on screen the strip below
+    // the board does the job without covering the drawing.
+    if (recorder.active) drawCaptionOverlay(speaking ? speaking.text : "");
 
     // The subtitle shows only while a line is actually being spoken.
     if (speaking) { thinkingEl.classList.remove("on"); idleSince = null; }

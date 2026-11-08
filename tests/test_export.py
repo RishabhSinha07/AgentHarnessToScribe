@@ -90,3 +90,17 @@ def test_the_demo_lesson_draws_clean():
     c.run(ops.read_text())
     assert not c.errors
     assert not c.collisions
+
+
+def test_the_shareable_lesson_draws_clean():
+    from pathlib import Path
+
+    from scribe import Canvas
+
+    ops = Path(__file__).resolve().parents[1] / "examples" / "slow_index.ops"
+    c = Canvas()
+    c.run(ops.read_text())
+    assert not c.errors
+    assert not c.collisions
+    assert c.panels == 2, "it should pan rather than erase"
+    assert 8 <= len(c.narration) <= 14, "keep it near a minute"

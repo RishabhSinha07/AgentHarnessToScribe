@@ -112,3 +112,10 @@ def test_recording_is_locked_to_real_speed():
     """Capture is real-time; 4x playback would desynchronise the audio."""
     assert "if (recorder.active) return;" in VIEWER
     assert "setSpeed(1)" in VIEWER
+
+
+def test_captions_are_burned_into_recorded_frames():
+    """captureStream() takes the canvas only, so the narration strip below the
+    board never reaches the video -- and social feeds autoplay muted."""
+    assert "drawCaptionOverlay" in VIEWER
+    assert "if (recorder.active) drawCaptionOverlay" in VIEWER
