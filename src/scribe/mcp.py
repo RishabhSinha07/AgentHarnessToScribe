@@ -29,12 +29,10 @@ A lesson, not a tour of a diagram:
 
 1. scribe_open(topic). Give the user the URL it returns.
 2. scribe_plan BEFORE drawing anything -- scribe_draw will refuse until you
-   have. Decide the one idea, the question you open on, 3-5 beats, and the
-   payoff. A lesson invented scene by scene ends up narrating what is on the
-   board instead of why it matters, and fills the space before it reaches the
-   point.
-3. Then draw the beats, 5-15 ops at a time, interleaving `say` with the
-   drawing. Draw a thing, say why it matters, draw the next thing.
+   have. The one idea, the question you open on, 3-5 beats, the payoff.
+3. Then draw the beats, 5-15 ops at a time. A line keeps being spoken over the
+   ops drawn after it, so the order that works is `say`, then draw the thing
+   the line just promised. Several `say` lines in a row freeze the board.
 4. Point. `highlight "<label>"` rings the element and speaks its note as the
    ring is drawn.
 5. READ THE REPORT from every scribe_draw. It names collisions and failed ops.
@@ -89,14 +87,16 @@ Writing the narration:
 - Say WHY, not WHAT. The label already says what the box is; a `say` that
   reads "on the left, the inputs" is a caption, and the picture did not need
   it. Spend the line on what the learner cannot see.
-- Open on the hook, before the answer is on the board. A question the drawing
-  then answers is worth more than the same fact stated first.
-- Earn the erase. Wiping a region should be a move you planned -- correcting a
-  model you deliberately drew wrong, or clearing space you knew you would need.
-- Never narrate your own mistakes. "Oops, I rubbed that out" is tooling noise,
-  not teaching. Fix it silently.
+- Give every line ink to run under. A line is spoken while the ops after it
+  are drawn, so `say` then draw then `say` keeps the board moving. Two or
+  three `say` lines in a row freeze it -- that stretch is a voice over a still
+  picture, and the report will tell you when you have written one.
+- Say it, then show it. The line lands first and the drawing answers it; a
+  line that arrives after the shape it describes is a caption.
 - One idea per line, and keep lines short. Long sentences stall the drawing
   while the voice catches up.
+- Never narrate your own mistakes. "Oops, I rubbed that out" is tooling noise,
+  not teaching. Fix it silently.
 """
 
 DSL_REFERENCE = f"""\
@@ -143,10 +143,7 @@ One command per line. Coordinates accept "3,4" or "3 4" interchangeably.
   say     <text>                 narration spoken at this moment
   # ...                          comment
 
-Writing a good lesson:
-- Interleave `say` with drawing so the picture builds as you talk. Draw, speak,
-  point, speak -- that ordering IS the teaching.
-- Say WHY, not WHAT. The label already says what the box is.
+Choosing commands:
 - Text is about 0.5 grid units per character. Make boxes wide enough for their
   labels; you will be told if one does not fit.
 - `connect`, `fill` and `strike` take LABELS, not coordinates. Use them.
@@ -156,6 +153,8 @@ Writing a good lesson:
 - `highlight "<label>"` is how you point. Never guess a radius with `circle`
   for something that has a label -- you cannot see how wide the box is, and the
   ring will either cut through the text or swallow its neighbours.
+- Left-to-right for a pipeline, top-to-bottom for a hierarchy. Title near
+  y=1.5, content from y=5, and 2+ units between boxes.
 - Nothing solid may overlap anything else solid. Highlights and freehand are
   exempt -- they are meant to cross things.
 - When the page gets past ~55% full you will be warned. Erase a region you have
@@ -200,10 +199,7 @@ def scribe_open(
         if opened
         else f"Ask the user to open {url}\n"
     )
-    return (
-        f"{head}\nDraw in scenes of 5-15 ops, interleaving `say` with the drawing, "
-        f"and read the report after each one.\n\n{DSL_REFERENCE}"
-    )
+    return f"{head}\nNext: scribe_plan. Call scribe_reference for the commands."
 
 
 @mcp.tool()

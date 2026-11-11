@@ -119,3 +119,44 @@ def test_captions_are_burned_into_recorded_frames():
     board never reaches the video -- and social feeds autoplay muted."""
     assert "drawCaptionOverlay" in VIEWER
     assert "if (recorder.active) drawCaptionOverlay" in VIEWER
+
+
+# --- narration and drawing share the clock ----------------------------------
+
+
+def test_a_spoken_line_does_not_own_the_clock():
+    """`say` used to get a slot as long as its audio, so nothing was drawn
+    while a line played and nothing was said while the ink went down. A 58s
+    recording was a frozen board with a voiceover for half its length."""
+    block = VIEWER[VIEWER.index("function duration(op)") :]
+    block = block[: block.index("\n  }")]
+    assert 'case "say":    return SAY_LEAD;' in block
+    assert "spokenOp" not in VIEWER, "speech must not stretch a visual slot any more"
+    # A gesture is as long as the hand takes to draw the ring. Its note keeps
+    # being spoken over whatever comes next, like any other line.
+    for cmd, ms in (("highlight", 820), ("circle", 780), ("strike", 560), ("erase", 430)):
+        assert f'case "{cmd}":' in block
+        assert f"return {ms};" in block, f"{cmd} is still stretched by its note"
+
+
+def test_layout_holds_a_line_only_for_the_voice():
+    """The one hard constraint is that two lines must not overlap. Everything
+    else keeps drawing underneath."""
+    block = VIEWER[VIEWER.index("function layout()") :]
+    block = block[: block.index("\n  }")]
+    assert "voiceFree" in block
+    assert "Math.max(cursor, voiceFree)" in block
+    assert "VOICE_GAP" in block
+    assert "Math.max(cursor, voiceFree ? voiceFree - VOICE_GAP : 0)" in block, (
+        "the last line has to be allowed to finish after the ink stops"
+    )
+
+
+def test_the_spoken_line_is_read_off_the_timeline_not_the_renderer():
+    """It was taken from whichever op was mid-draw, which cannot be right once
+    a line outlives its own op -- the caption vanished and the voice stopped
+    being tracked while the drawing carried on."""
+    assert "function spokenAt(t)" in VIEWER
+    assert "const speaking = spokenAt(time);" in VIEWER
+    render = VIEWER[VIEWER.index("function renderAt(time)") : VIEWER.index("function spokenAt")]
+    assert "speaking" not in render, "renderAt must not decide what is being said"

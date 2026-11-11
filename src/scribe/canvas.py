@@ -214,6 +214,9 @@ class Canvas:
     elements: list[Element] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)  # advisory, per scene
+    # Ops that actually drew, this scene. A field, not set up in run(), so a
+    # report asked for before anything has been drawn is not an AttributeError.
+    accepted: list[str] = field(default_factory=list)
     wiped: list[str] = field(default_factory=list)  # what each erase took out
     page: int = 0
     panels: int = field(init=False, default=1)
@@ -1245,6 +1248,7 @@ class Canvas:
             out += [f"  - {w}" for w in self.wiped]
         if not (self.errors or self.collisions):
             out.append("No errors, no collisions.")
+        out += self.narration_advice()
 
         out.append("")
         out.append(self.minimap())
@@ -1253,6 +1257,53 @@ class Canvas:
             out.append("Elements:")
             out += [f"  - {e.describe()}" for e in live]
         return "\n".join(out)
+
+    # Neither of these is a drawing fault, so nothing above can see them --
+    # and both are exactly what makes a recorded lesson feel like a slideshow
+    # with a voiceover instead of someone teaching.
+    _SPEECH_ONLY = ("say",)
+    _NOT_INK = ("say", "pen", "dash", "board", "#")
+
+    def narration_advice(self) -> list[str]:
+        """Two narration faults the board itself cannot report.
+
+        A line the learner has already heard, and a stretch of talking with
+        nothing being drawn under it. The second one is the common way a
+        lesson stops being a whiteboard: the ink goes down in silence, then
+        the board freezes while the voice catches up.
+        """
+        out: list[str] = []
+
+        seen: dict[str, int] = {}
+        for line in self.narration:
+            key = "".join(c for c in line.lower() if c.isalnum() or c == " ").strip()
+            if not key:
+                continue
+            seen[key] = seen.get(key, 0) + 1
+        repeats = [k for k, n in seen.items() if n > 1]
+        if repeats:
+            out.append(
+                f"REPEATED NARRATION -- {len(repeats)} line(s) are spoken more than once. "
+                "The learner hears the same sentence twice, which reads as a stutter:"
+            )
+            out += [f"  = {k[:70]}" for k in repeats]
+
+        run = 0
+        worst = 0
+        for line in self.accepted:
+            head = line.strip().split(" ", 1)[0].lower()
+            if head in self._SPEECH_ONLY:
+                run += 1
+                worst = max(worst, run)
+            elif head and head not in self._NOT_INK:
+                run = 0
+        if worst > 1:
+            out.append(
+                f"NOTHING BEING DRAWN -- {worst} `say` lines in a row. The board is "
+                "frozen for all of them, so that stretch is a voice over a still "
+                "picture. Move a line so the ink lands while you talk, or cut it."
+            )
+        return out
 
     def clear_feedback(self) -> None:
         """Reset the per-scene problem lists, keeping the drawing itself.

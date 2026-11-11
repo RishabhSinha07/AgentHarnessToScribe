@@ -5,40 +5,13 @@ description: Teach a concept by drawing it live on a Scribe whiteboard — build
 
 # Teaching at the whiteboard
 
-You have a whiteboard. The point is not to produce a diagram — it is that the
-picture **builds up while you talk**, and that you can point at things and rub
-things out. A finished diagram appearing all at once is the failure this tool
-exists to fix.
+The scribe server states the loop, the planning rules and the narration rules;
+`scribe_reference` lists the commands. This skill covers what those cannot: the
+judgement calls that decide whether the result is a lesson or a wireframe with
+a voiceover.
 
-## The loop
-
-1. `scribe_open(topic)` once. It opens the board in the user's browser and
-   returns the URL.
-2. **`scribe_plan(...)` before any ink.** `scribe_draw` refuses until you have.
-3. `scribe_reference()` before your first draw, if you have not read it.
-4. Draw a **beat**: 5–15 ops, interleaving `say` with the drawing.
-5. **Read the report.** Fix anything it flags.
-6. **`scribe_look()` and actually look.** Then the next beat.
-
-## Plan first, and plan an argument
-
-The planning step is not bureaucracy — it is the difference between a lesson
-and a tour of a diagram. Improvising produces narration like *"on the left,
-your inputs"*: a caption for a box the learner can already see. You write
-captions when you decide the line while drawing the box.
-
-A plan needs four things, and the fourth is the one people skip:
-
-- **The one idea.** If they remember a single sentence, this is it.
-- **The hook.** A question the drawing answers. Put it on the board *first*
-  and leave it there, so the payoff lands while the question is still visible.
-- **The beats.** Steps in an argument, not a list of shapes. "One server
-  buckles under load" is a beat; "draw three boxes" is not. The shape that
-  almost always works: **problem → obvious fix → why it fails → the real idea.**
-- **The misconception.** What does the learner probably believe that is wrong?
-  Name it and you have something to push against. Draw it wrong on purpose,
-  then correct it — that correction is the one move a finished diagram cannot
-  make, and it is the best reason this tool exists.
+Read it alongside the tool output, not instead of it. Where they agree, the
+tool output is the authority — it is generated from the code.
 
 ## Use the right primitive
 
@@ -57,36 +30,60 @@ not have to:
 Icons: db server user cloud queue file clock lock globe gear warning check cross box
 
 `fill "label" blue|green|red|yellow|grey` tints a shape — use it to mark one
-path through a diagram, or the half of a system you are currently discussing.
-`dash on` makes everything after it dashed, for optional or async paths.
-`brace x,y,h "label"` groups a vertical range.
+path through a diagram, or the half of a system you are discussing. `dash on`
+makes everything after it dashed, for optional or async paths. `brace x,y,h
+"label"` groups a vertical range.
 
-**`connect`, `fill`, `strike` and `highlight` all take labels, not
-coordinates.** That is deliberate: the canvas knows where things are and how
-big they rendered, and you do not. If the report says a connector *passes
-through* something, move one of the two or route it by hand with `arrow`.
+## Pace the lesson against the voice
 
-## The picture has to carry the claim
+Narration and drawing share one clock but not one queue: a `say` line keeps
+playing over the ops that follow it. So the shape of a scene is
 
-This is the failure mode that makes a lesson worthless, and the report will
-not catch it. A board reading *"32 conflict points"* beside eight rings
-scattered in the middle passes every check — nothing overlapped, nothing
-failed to parse — and teaches nothing. Worse, it tells the learner the drawing
-is decoration, so they stop looking at it.
+```
+say    "An index is a second copy of that column, kept in sorted order."
+icon   file 32,27.5 5 "sorted copy"
+connect "CREATE INDEX ..." "sorted copy" "builds"
+highlight "sorted copy" "This is the part you are really paying for."
+```
 
-- **Never state a count the board does not show.** Draw all 32, or choose the
-  smaller example you can draw honestly: two cars and the single point where
-  they meet. The small honest version teaches better anyway.
-- **Every mark needs a referent.** A ring means *this one*. A cluster of rings
-  in open space means nothing. Put each where the thing it marks actually is.
-- **Respect the geometry you already drew.** If there are roads on the board, a
-  vehicle path runs along them, not diagonally through the kerb.
-- **Use the whole board.** Everything in one band with two thirds blank reads
-  as unfinished.
+— the claim, then the ink that proves it while the words are still in the air.
+Two `say` lines back to back freeze the board for both; the draw report says
+`NOTHING BEING DRAWN` when you have written one. A line that arrives *after*
+its shape is a caption, and the picture did not need it.
 
-The report includes a **layout map** — a coarse text picture of the current
-screen. Read it. It shows crammed bands, empty regions, and marks sitting in
-open space, none of which the collision check can see:
+The report also flags `REPEATED NARRATION`. Hearing the same sentence twice
+reads as a stutter — usually a `highlight` note restating the `say` above it.
+Point with the note, do not re-explain: *"this is the write you did not know
+you were buying"*, not the sentence you just said again.
+
+## Writing a scene
+
+Draw a thing, say what it is for, draw the next thing — and point at whatever
+you are talking about:
+
+- **`highlight "<label>"`, never `circle`, for anything with a label.** You
+  cannot see how wide a box rendered; a guessed radius either slices through
+  the text or swallows the neighbours. `circle x,y,r` is for empty space only.
+- **Narrate in speech, not prose.** `say` lines are read aloud. Write how you
+  would talk — two short lines beat one long one.
+- **Let the shape carry the idea.** Branching, ordering, nesting, feedback. A
+  row of boxes labelled "Step 1 / Step 2" teaches nothing.
+
+## Reading the report
+
+| Report says | Do |
+|---|---|
+| `COLLISIONS` | Something is now unreadable. `erase` the offender and redraw it clear |
+| `ERRORS` | The op did not draw at all. The message gives the correct form |
+| `label 'x' needs ~N units` | The box is too narrow for its label. Widen it |
+| `circle ... cuts across` | Use `highlight "<label>"` instead of a guessed radius |
+| `this screen is filling up` | `pan` to fresh board below |
+| `NOTHING BEING DRAWN` | Move a `say` so ink lands under it, or cut the line |
+| `REPEATED NARRATION` | Rewrite the second line, or drop it |
+
+The report includes a **layout map** — a coarse text picture of the screen. It
+shows crammed bands, empty regions, and rings sitting in open space, none of
+which the collision check can see:
 
 ```
   |      ~~~~~~~~~~~~~~~~~~~                    |
@@ -94,95 +91,16 @@ open space, none of which the collision check can see:
   |>>>>>>>>>>>>>>>>>>OOOO>O>>>>>>>>>>>>>>>>>>>> |
 ```
 
-Then `scribe_look()` and ask one question: **does this show what I just
-said?** If not, fix the picture or drop the sentence.
-
-## Narration rules
-
-- **Say why, not what.** The label says what. If a `say` line would still be
-  true with the diagram covered up, it is carrying its weight; if it only
-  describes what is on screen, cut it.
-- **Never narrate your own mistakes.** *"Oops, I rubbed that out"* is tooling
-  noise. Fix it silently and keep teaching.
-- **Erase only to correct.** Rub out something that is *wrong* — a model you
-  drew wrong on purpose, or a genuine mistake. Never erase to make space: the
-  whole lesson is kept and exported at the end, and erasing throws it away.
-  When the report says the screen is filling up, `pan` to fresh board below.
-- **Finish properly.** Call `scribe_finish` once the payoff has landed. The
-  board cannot tell you composing the next beat from you having stopped, so
-  without it the viewer waits. Then `scribe_export` to save the lesson.
-- **One idea per line, short lines.** Long sentences stall the drawing while
-  the voice catches up.
-- **Give the key moment room.** Not every beat deserves equal weight.
-
-## Writing a scene
-
-Draw a thing, say what it is, draw the next thing. That ordering *is* the
-teaching:
-
-```
-box    5,7 3,2.5 "x1"
-box    17,5 3,2.5 "h1"
-say    "On the left, your inputs."
-stroke 8,8.25 17,6.25
-say    "Every input connects to every hidden unit. That's the mesh."
-highlight "h1" "Circling this one — it's where the work happens."
-```
-
-- **Point at things.** When you refer to something, `highlight "<its label>"`.
-  The note is spoken aloud as the ring is drawn, so the pointer explains itself.
-- **Never guess a radius.** `circle x,y,r` exists for pointing at empty space.
-  For anything with a label, use `highlight` — you cannot see how wide a box
-  rendered, and a guessed ring either slices through the text or swallows the
-  neighbours. The report will tell you when you have done this.
-- **Narrate in speech, not prose.** `say` lines are read out loud — by the
-  browser, or by ElevenLabs if the server has a key. Write how you would talk,
-  not how you would write. Long sentences stall the drawing while the voice
-  catches up; two short lines beat one long one.
-- **Let the shape carry the idea.** Branching, ordering, nesting, feedback. A
-  row of boxes labelled "Step 1 / Step 2" teaches nothing.
-
-## Reading the report
-
-Every `scribe_draw` returns something like:
-
-```
-Page 0 of a 40x30 grid. 28 elements, 38% full.
-COLLISIONS -- 1 overlapping elements:
-  x text (16.5,1.98)-(19.6,3.03) 'Hidden' overlaps text (11,0.98)-(25,2.03) 'How a neural network learns'
-```
-
-A collision means something on the board is **now unreadable**. Fix it before
-continuing — do not push on and hope.
-
-| Report says | Do |
-|---|---|
-| `COLLISIONS` | `erase` the offender and redraw it somewhere clear |
-| `ERRORS` | The op did not draw at all. The message gives the correct form |
-| `label 'x' needs ~N units` | The box is too narrow for its label. Widen it |
-| `circle ... cuts across` | Use `highlight "<label>"` instead of a guessed radius |
-| `page is filling up` | Erase a finished region, or start a new `page` |
-
-`scribe_look()` costs an image; the report is free. Reach for the picture when
-the text says something is wrong, or to check the final composition.
+`scribe_look()` costs an image; the report is free. Reach for the picture
+after each beat anyway — it is the only thing that can tell you the board
+means something.
 
 ## Fixing things
 
 - **A stray element** — `scribe_erase_preview(x,y,w,h)` first. The eraser is a
-  blunt rectangle and will take neighbours with it. The preview tells you which.
-- **A whole scene went wrong** — `scribe_undo()` rebuilds the board without it.
-  Cleaner than erasing when the damage is spread out.
-- **Erasing is also teaching.** Wiping a section you have finished with to make
-  room, or correcting a deliberately wrong model, is good pedagogy — not just
-  damage control. Narrate it: `erase 0,22 40,8 "Wiping this, we need the room."`
-
-## Laying things out
-
-The board is 64 wide × 36 tall. Text is about **0.5 grid units per character**,
-so `"Request Queue"` needs ~7 units of width.
-
-- Left-to-right for pipelines, top-to-bottom for hierarchies.
-- Leave 2+ units between boxes; labels sit inside them.
-- Keep a title at `y≈1.5` and start the content at `y≈5`.
-- Budget vertical space. Running out at the bottom mid-explanation is the most
-  common way a lesson falls apart — check occupancy as you go.
+  blunt rectangle and will take neighbours with it; the preview says which.
+- **A whole scene went wrong** — `scribe_undo()` rebuilds the board without
+  it. Cleaner than erasing when the damage is spread out.
+- **Out of room** — `pan`, never `erase`. Erasing throws away part of the
+  lesson that would otherwise be exported. Erase only to correct something
+  that is wrong, and when you do, say why you are rubbing it out.

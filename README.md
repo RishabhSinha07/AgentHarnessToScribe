@@ -88,6 +88,14 @@ long a sentence takes to say, so the viewer loads each line's audio ahead of
 time and uses its real duration. Without that, roughly one line in six gets
 clipped before it finishes.
 
+**And it does not stop the drawing.** A line plays *over* the ops that follow
+it: the ink keeps moving while the voice runs, and the only thing that ever
+waits is a second line, which cannot start until the first has finished. When
+`say` owned its own slot instead, a recorded lesson spent half its length as a
+still picture with a voiceover — exactly the thing a whiteboard is not. Write
+the claim first and the shapes under it; the draw report says
+`NOTHING BEING DRAWN` when two lines are stacked back to back.
+
 ### As an MCP server
 
 ```bash
@@ -131,14 +139,15 @@ page    <title>                wipe to a clean page
 say     <text>                 narration, spoken at this moment
 ```
 
-A lesson reads as draw, speak, point, speak — and that ordering *is* the
-teaching. Say **why**, not what; the label already says what:
+A lesson reads as speak, draw, point — the claim, then the ink that proves it
+while the words are still in the air. Say **why**, not what; the label already
+says what:
 
 ```
+say    "Everything connects to everything, because nothing yet knows what matters."
 box    5,7 3,2.5 "x1"
 box    17,5 3,2.5 "h1"
 stroke 8,8.25 17,6.25
-say    "Everything connects to everything, because nothing yet knows what matters."
 highlight "h1" "Pick any one of them. They are interchangeable."
 ```
 
@@ -200,6 +209,12 @@ clean and illustrate nothing.
 design choice: the agent is told about an overlap cheaply, in words, and only
 spends an image on `scribe_look` when the text says something is wrong.
 
+It reports two faults in the *teaching* as well, because a perfectly drawn
+board can still be a bad lesson and nothing else would catch either:
+`REPEATED NARRATION` when a line is spoken twice — usually a `highlight` note
+restating the `say` above it — and `NOTHING BEING DRAWN` when `say` lines are
+stacked back to back, which freezes the board for the length of both.
+
 ### Built for agents to get right
 
 - **The server carries its own instructions.** The MCP server ships the
@@ -219,6 +234,12 @@ spends an image on `scribe_look` when the text says something is wrong.
   a still board with a frozen clock reads as broken.
 - **Narration is fetched ahead of playback.** The first spoken line used to pay
   a full round trip while the board drew in silence.
+- **One doctrine, in one place.** The server instructions are the authority on
+  how to teach; `scribe_reference` is a command list, `scribe_plan` hands back
+  the narration rules at the moment the lines are written, and the skill covers
+  only the judgement calls on top. The same advice repeated in four voices read
+  as nagging and was impossible to keep consistent — two copies had already
+  come to disagree about erasing.
 - **Pointing is not guesswork.** `highlight "<label>"` sizes the ring from the
   target's own box, because an agent cannot see how wide a box rendered. The
   same applies to `connect`, `fill` and `strike`: all take labels, and the

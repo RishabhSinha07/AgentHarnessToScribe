@@ -418,3 +418,36 @@ def test_minimap_follows_the_camera():
     assert any("#" in r for r in _map_body(c))
     c.run("pan 36")
     assert not any("#" in r for r in _map_body(c)), "previous screen is out of view"
+
+
+# --- narration faults the board cannot see ----------------------------------
+
+
+def test_repeated_narration_is_reported():
+    """The same sentence twice reads as a stutter, and nothing else in the
+    report can see it -- the drawing is perfectly fine."""
+    c = Canvas()
+    c.run('say "An index is a second copy."\nbox 2,2 8,2 "idx"\nsay "An index is a second copy!"')
+    report = c.state_summary()
+    assert "REPEATED NARRATION" in report
+
+
+def test_talking_over_a_frozen_board_is_reported():
+    """Two `say` lines in a row is a voice over a still picture: the whole
+    failure this tool exists to fix, and it parses perfectly."""
+    c = Canvas()
+    c.run('say "One."\nsay "Two."')
+    assert "NOTHING BEING DRAWN" in c.state_summary()
+
+
+def test_interleaved_narration_is_not_reported():
+    c = Canvas()
+    c.run('say "One."\nbox 2,2 8,2 "a"\nsay "Two."\nbox 2,8 8,2 "b"')
+    report = c.state_summary()
+    assert "NOTHING BEING DRAWN" not in report
+    assert "REPEATED NARRATION" not in report
+
+
+def test_a_report_before_anything_is_drawn_still_works():
+    """`accepted` is a field, not something run() creates."""
+    assert "0 elements" in Canvas().state_summary()

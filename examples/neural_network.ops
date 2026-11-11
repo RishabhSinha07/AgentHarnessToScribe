@@ -1,26 +1,33 @@
 # This lesson was laid out for a 40x30 board.
+#
+# Every `say` sits ABOVE the ops it describes. A line keeps being spoken over
+# whatever is drawn next, so this is what makes the mesh appear while the voice
+# explains it. Written the other way round -- shapes first, line after -- each
+# sentence becomes a caption for something already on the board, and the board
+# is frozen the whole time it plays.
 board 40 30
 
-text 11,1.5 "How a neural network learns"
 say "Here is the question: how does a pile of numbers learn to be right?"
+text 11,1.5 "How a neural network learns"
 
+say "Three numbers go in. Nothing here knows what they mean yet."
 text 4.5,4.5 "Input"
 box 5,7 3,2.5 "x1"
 box 5,12 3,2.5 "x2"
 box 5,17 3,2.5 "x3"
-say "Three numbers go in. Nothing here knows what they mean yet."
 
+say "This middle row is where the learning lives. Everything else is plumbing."
 text 16.5,2.5 "Hidden"
 box 17,5 3,2.5 "h1"
 box 17,10 3,2.5 "h2"
 box 17,15 3,2.5 "h3"
 box 17,20 3,2.5 "h4"
-say "This middle row is where the learning lives. Everything else is plumbing."
 
+say "One number comes out, and it starts off being wrong."
 text 28.5,9.5 "Output"
 box 29,12 3.5,2.5 "y"
-say "One number comes out, and it starts off being wrong."
 
+say "Everything connects to everything, because nothing yet knows what matters."
 stroke 8,8.25 17,6.25
 stroke 8,8.25 17,11.25
 stroke 8,8.25 17,16.25
@@ -33,13 +40,12 @@ stroke 8,18.25 17,6.25
 stroke 8,18.25 17,11.25
 stroke 8,18.25 17,16.25
 stroke 8,18.25 17,21.25
-say "Everything connects to everything, because nothing yet knows what matters."
 
+say "Each of those connections carries a weight, and the weights are the only thing that changes."
 stroke 20,6.25 29,13.25
 stroke 20,11.25 29,13.25
 stroke 20,16.25 29,13.25
 stroke 20,21.25 29,13.25
-say "Each of those connections carries a weight, and the weights are the only thing that changes."
 # --- correction: "Hidden" ran into the title. Clear the band and rewrite both.
 erase 18,2.2 3
 text 11,1.5 "How a neural network learns"
@@ -52,51 +58,51 @@ say "All four do the identical job, so understanding one is understanding the la
 box 17,5 3,2.5 "h1"
 
 # --- the zoom: what one unit actually does
-text 1.5,23.3 "Inside h2: multiply, add, squash"
 say "Three steps, and none of them is cleverer than arithmetic."
+text 1.5,23.3 "Inside h2: multiply, add, squash"
 
+say "A weight is just how much this unit cares about that input."
 text 3.5,25.2 "x1"
 text 3.5,26.6 "x2"
 text 3.5,28 "x3"
 arrow 5.5,25.2 12.6,26 "w1"
 arrow 5.5,26.6 12.6,26.5 "w2"
 arrow 5.5,28 12.6,27 "w3"
-say "A weight is just how much this unit cares about that input."
 
-box 13,25 4.5,3 "sum"
 say "Add them up, and you have one number standing for all three inputs."
+box 13,25 4.5,3 "sum"
 
+say "The squash is what stops the whole network collapsing into one straight line."
 arrow 17.5,26.5 21,26.5
 box 21,25 5.5,3 "ReLU"
-say "The squash is what stops the whole network collapsing into one straight line."
 
+say "That is the entire unit. Repeat it a few million times and you have a model."
 arrow 26.5,26.5 31,26.5
 text 31.5,26.5 "h2"
-say "That is the entire unit. Repeat it a few million times and you have a model."
+
+say "It guessed 0.7. The truth was 1.0, so it was wrong by a third."
 # tie the prediction to the output box before we clear anything
 arrow 32.6,13.25 33.6,13.25
 text 34,11.5 "guess"
 text 34,13.25 "0.7"
 text 34,15 "truth"
 text 34,16.7 "1.0"
-say "It guessed 0.7. The truth was 1.0, so it was wrong by a third."
 
 # --- wipe the zoom. One rectangle now that erase takes w,h.
 erase 0,22.8 40,8 "Forget the arithmetic. What matters is what happens when it is wrong."
-say "Hold on to that, because the next part is where it gets fixed."
 
+say "That gap is the only feedback the network ever gets."
 text 1.5,24.3 "Learning: compare, then push the error backwards"
 box 2,26 5,2.8 "guess 0.7"
 arrow 7,27.4 9.5,27.4
 box 9.5,26 5,2.8 "true 1.0"
 arrow 14.5,27.4 17,27.4
 box 17,26 6,2.8 "error 0.3"
-say "That gap is the only feedback the network ever gets."
 
+say "Every weight that pushed the answer down gets blamed in proportion to how much it pushed."
 arrow 23,27.4 25.5,27.4
 box 25.5,26 9,2.8 "nudge the weights"
-say "Every weight that pushed the answer down gets blamed in proportion to how much it pushed."
 
-arrow 28,25.8 21,23.2 "backwards"
 say "Blame flows backwards through the mesh. That is the whole of backpropagation."
+arrow 28,25.8 21,23.2 "backwards"
 say "Nothing here understood anything. It just stopped being wrong, slowly."

@@ -707,8 +707,20 @@
   // and word shape matter, and the worst case ran ~71ms/char.
   const estimate = (n) => 550 + n * 70;
 
-  /** How long to hold a spoken line: its real audio duration when we know it. */
-  function spokenOp(op, text) {
+  // A spoken line does not own the clock. It gets a short lead-in and then the
+  // drawing carries on underneath it -- the picture building WHILE you talk is
+  // the entire point. Giving `say` a slot as long as its audio turned a lesson
+  // into a slideshow: ink in silence, then a frozen board with a voice over it.
+  const SAY_LEAD = 340;    // the voice starts a beat before the ink moves
+  const VOICE_GAP = 160;   // breath between two lines, so they never overlap
+
+  /** The line this op speaks, if any. `say` carries it; gestures carry a note. */
+  const spokenText = (op) => (op.cmd === "say" ? op.s : op.note) || "";
+
+  /** How long the voice is busy with this op: real audio when we know it. */
+  function speechMs(op) {
+    const text = spokenText(op);
+    if (!text) return 0;
     return op.audioMs ? op.audioMs + 260 : estimate(text.length);
   }
 
@@ -718,16 +730,16 @@
       case "arrow":  return 520;
       case "text":   return Math.max(320, op.s.length * 42);
       case "stroke": return Math.max(260, (op.pts.length - 1) * 170);
-      case "say":    return spokenOp(op, op.s);
-      // A gesture carrying a note has to stay on screen long enough to say it,
-      // or the next line cuts the voice off mid-sentence.
-      case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
+      // Just the lead-in. The line keeps being spoken over whatever is drawn
+      // next; layout() is what stops two lines from overlapping.
+      case "say":    return SAY_LEAD;
+      case "highlight": return 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
       case "icon":    return 820;
       case "connect": return op.label ? 640 : 520;
       case "fill":    return 420;
-      case "strike":  return op.note ? Math.max(560, spokenOp(op, op.note)) : 560;
+      case "strike":  return 560;
       case "group":   return 760;
       case "note":    return 700;
       case "brace":   return 520;
@@ -735,8 +747,8 @@
       case "pan":     return 900;    // the camera glides, it does not cut
       case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
-      case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
-      case "erase":  return op.note ? Math.max(430, spokenOp(op, op.note)) : 430;
+      case "circle": return 780;
+      case "erase":  return 430;
       default:       return 200;
     }
   }
@@ -746,10 +758,40 @@
   const starts = [];
   let total = 0;
 
+  /** Place every op on the clock, and every spoken line beside it.
+   *
+   *  Drawing and narration run on one timeline but not in one queue: the ink
+   *  advances continuously, and a line is spoken across however many ops it
+   *  takes. The one hard constraint is the voice -- you cannot talk over
+   *  yourself -- so a line that would start while the previous one is still
+   *  running holds the drawing until the speaker is free.
+   */
+  function layout() {
+    let cursor = 0, voiceFree = 0;
+    starts.length = ops.length;
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      const ms = speechMs(op);
+      if (ms) {
+        cursor = Math.max(cursor, voiceFree);   // wait for the speaker, nothing else
+        op.speakAt = cursor;
+        op.speakUntil = cursor + ms;
+        voiceFree = op.speakUntil + VOICE_GAP;
+      } else {
+        op.speakAt = op.speakUntil = 0;
+      }
+      starts[i] = cursor;
+      cursor += duration(op);
+    }
+    // The last line has to be allowed to finish after the ink stops.
+    total = Math.max(cursor, voiceFree ? voiceFree - VOICE_GAP : 0);
+  }
+
   function appendOps(src) {
     const fresh = parse(src);
-    for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
+    for (const op of fresh) ops.push(op);
     if (fresh.length) {
+      layout();
       renderLog();
       idleSince = null;
       thinkingEl.classList.remove("on");
@@ -800,8 +842,7 @@
       curFrac = oldDur > 0 ? Math.min(1, (time - starts[i]) / oldDur) : 1;
     }
 
-    total = 0;
-    for (let i = 0; i < ops.length; i++) { starts[i] = total; total += duration(ops[i]); }
+    layout();
 
     if (atHead) time = total;
     else if (curIdx >= 0) time = starts[curIdx] + curFrac * duration(ops[curIdx]);
@@ -890,7 +931,6 @@
     solids = [];
     labelled = new Map();
 
-    let speaking = null;   // { text, idx, gesture }
     for (let i = 0; i < ops.length; i++) {
       const op = ops[i], d = duration(op);
       const t = Math.max(0, Math.min(1, (time - starts[i]) / d));
@@ -936,7 +976,6 @@
             }
             polyline(pts, t, 3, ACCENT);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
         case "pen": pen = PENS[op.name] || PEN; break;
@@ -989,7 +1028,6 @@
             polyline([[box[0]-pad, box[1]-pad], [box[2]+pad, box[3]+pad]], t, 4, ACCENT);
             polyline([[box[0]-pad, box[3]+pad], [box[2]+pad, box[1]-pad]], t, 4, ACCENT);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
 
@@ -1062,7 +1100,6 @@
             pts.push([op.x + op.r * Math.cos(th) * 1.12, op.y + op.r * Math.sin(th) * 0.9]);
           }
           polyline(pts, t, 3, ACCENT);
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
         case "erase": {
@@ -1075,35 +1112,28 @@
             ctx.fillStyle = "rgba(120,130,145,.18)";
             ctx.fillRect(x0 + (x1 - x0) * t - 16, y0, 16, y1 - y0);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
-        case "say": if (t < 1) speaking = { text: op.s, idx: i, gesture: false }; break;
       }
     }
-    return speaking;
   }
 
-  /** The next line that will be spoken after op `idx`, for prefetching. */
-  function nextSpoken(idx) {
-    for (let i = idx + 1; i < ops.length; i++) {
-      const o = ops[i];
-      if (o.cmd === "say") return { text: o.s, op: o };
-      if (o.note) return { text: o.note, op: o };
+  /** The line being spoken at `t`, or null.
+   *
+   *  The window belongs to the audio, not to the drawing: the voice carries on
+   *  over the ops that follow, so this cannot be read off whichever op is
+   *  currently being inked. layout() keeps the windows from overlapping, so at
+   *  most one matches.
+   */
+  function spokenAt(t) {
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      if (op.speakAt > t) break;
+      if (op.speakUntil > t) {
+        return { text: spokenText(op), idx: i, gesture: op.cmd !== "say" };
+      }
     }
     return null;
-  }
-
-  // --- last spoken line, for when playback sits between `say` ops -----------
-  function lastSaid(time) {
-    let said = null;
-    for (let i = 0; i < ops.length; i++) {
-      if (starts[i] > time) break;
-      const o = ops[i];
-      if (o.cmd === "say") said = o.s;
-      else if (o.note) said = o.note;
-    }
-    return said;
   }
 
   // --- op log ---------------------------------------------------------------
@@ -1227,8 +1257,8 @@
       if (this.engine === "browser") return;
       let found = 0;
       for (let i = 0; i < ops.length && found < count; i++) {
-        if (starts[i] + duration(ops[i]) < t) continue;
-        const text = ops[i].cmd === "say" ? ops[i].s : ops[i].note;
+        if ((ops[i].speakUntil || starts[i] + duration(ops[i])) < t) continue;
+        const text = spokenText(ops[i]);
         if (!text) continue;
         this.prefetch(text, ops[i]);
         found++;
@@ -1300,7 +1330,8 @@
   };
 
   function paint() {
-    const speaking = renderAt(time);
+    renderAt(time);
+    const speaking = spokenAt(time);
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
     if (speaking && playing) {
       speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);

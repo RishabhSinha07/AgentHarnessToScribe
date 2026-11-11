@@ -200,6 +200,16 @@
     background:transparent; border-color:transparent; color:var(--good); }
   #follow[aria-pressed="true"]:hover, .voice-btn[aria-pressed="true"]:hover {
     background:var(--surface); border-color:var(--rule); }
+  #saveVideo[hidden] { display:none; }
+  #saveVideo { white-space:nowrap; }
+  .rec-btn { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .rec-dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
+  .rec-btn[aria-pressed="true"] { color:var(--accent); }
+  .rec-btn[aria-pressed="true"] .rec-dot { background:var(--accent);
+    animation:recpulse 1.4s ease-in-out infinite; }
+  @keyframes recpulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) { .rec-dot { animation:none; } }
+
   #fullscreen { font-size:15px; padding:7px 11px; }
   /* In full screen the board fills the glass rather than sitting in a card. */
   .stage:fullscreen { border-radius:0; border:0; display:flex; flex-direction:column;
@@ -252,6 +262,10 @@
       <select id="voicePicker" class="voice-picker" aria-label="Narration voice">
         <option value="browser">Browser voice</option>
       </select>
+      <button id="record" class="ghost rec-btn" title="Record the lesson as a video">
+        <span class="rec-dot"></span><span id="recLabel">Record</span>
+      </button>
+      <button id="saveVideo" class="primary" hidden>Save video</button>
       <button id="fullscreen" class="ghost" title="Full screen (f)">&#9974;</button>
       <button id="logToggle" class="ghost" aria-expanded="false"
               aria-controls="oplog" title="Show the drawing commands">&lt;/&gt;</button>
@@ -259,7 +273,7 @@
     <div class="oplog" id="oplog" hidden></div>
   </div>
 </div>
-<script>window.__OPS__ = "board 64 36\ntext 3,2.5 \"Why is the first visit always the slow one?\"\nsay \"A question with a more interesting answer than it looks.\"\nicon user 9,13 6 \"you\"\nicon server 31,13 6 \"origin\"\nicon db 53,13 6 \"database\"\nsay \"Your browser asks a server, the server asks a database. Nothing exotic.\"\nconnect \"you\" \"origin\" \"~80ms\"\nconnect \"origin\" \"database\" \"~2ms\"\nsay \"Notice the numbers. The hop across the ocean costs forty times the hop across the room.\"\ntext 3,22 \"And that round trip only bought you the HTML.\"\nbox 8,25 11,2.4 \"HTML\"\nbox 21,28 11,2.4 \"then CSS\"\nbox 34,31 11,2.4 \"then JS\"\nsay \"Each file has to arrive before the browser knows to ask for the next one.\"\nhighlight \"then JS\" \"By here you have paid for the crossing four times over.\"\npan 36\ntext 3,39 \"So the obvious fix:\"\nbox 7,43 24,3.2 \"buy faster internet\"\nsay \"Almost everyone reaches for this one.\"\nstrike \"buy faster internet\" \"It does not help, and it is worth knowing why.\"\ntext 3,49 \"Bandwidth is how WIDE the pipe is. This is how LONG it is.\"\nsay \"A wider pipe moves more at once. It does not shorten the ocean.\"\nicon globe 12,57 6 \"edge\"\nicon user 40,57 6 \"visitor\"\nconnect \"visitor\" \"edge\" \"~8ms\"\nnote 3,64 30 \"Second visit is fast because nothing travels. The files are already down the road.\"\nsay \"So you do not speed up the journey. You move the destination closer.\"\nsay \"That is a CDN, and that is the whole idea.\"";window.__TOPIC__ = "Why your first page load is slow";window.__GRID__ = [64, 36];</script>
+<script>window.__OPS__ = "board 64 36\nsay \"A question with a more interesting answer than it looks.\"\ntext 3,2.5 \"Why is the first visit always the slow one?\"\nsay \"Your browser asks a server, the server asks a database. Nothing exotic.\"\nicon user 9,13 6 \"you\"\nicon server 31,13 6 \"origin\"\nicon db 53,13 6 \"database\"\nsay \"Watch the numbers. The hop across the ocean costs forty times the hop across the room.\"\nconnect \"you\" \"origin\" \"~80ms\"\nconnect \"origin\" \"database\" \"~2ms\"\nsay \"And that whole round trip only bought you the HTML.\"\ntext 3,22 \"One trip per file -- and each one waits its turn.\"\nbox 8,25 11,2.4 \"HTML\"\nsay \"Each file has to arrive before the browser knows to ask for the next one.\"\nbox 21,28 11,2.4 \"then CSS\"\nbox 34,31 11,2.4 \"then JS\"\nhighlight \"then JS\" \"By here you have paid for the crossing four times over.\"\npan 36\nsay \"Almost everyone reaches for this one.\"\ntext 3,39 \"So the obvious fix:\"\nbox 7,43 24,3.2 \"buy faster internet\"\nstrike \"buy faster internet\" \"It does not help, and it is worth knowing why.\"\nsay \"A wider pipe moves more at once. It does not shorten the ocean.\"\ntext 3,49 \"Bandwidth is how WIDE the pipe is. This is how LONG it is.\"\nsay \"So you do not speed up the journey. You move the destination closer.\"\nicon globe 12,57 6 \"edge\"\nicon user 40,57 6 \"visitor\"\nconnect \"visitor\" \"edge\" \"~8ms\"\nsay \"That is a CDN, and that is the whole idea.\"\nnote 3,64 30 \"Second visit is fast because nothing travels. The files are already down the road.\"";window.__TOPIC__ = "Why your first page load is slow";window.__GRID__ = [64, 36];</script>
 <script>
 (() => {
   "use strict";
@@ -694,8 +708,20 @@
   // and word shape matter, and the worst case ran ~71ms/char.
   const estimate = (n) => 550 + n * 70;
 
-  /** How long to hold a spoken line: its real audio duration when we know it. */
-  function spokenOp(op, text) {
+  // A spoken line does not own the clock. It gets a short lead-in and then the
+  // drawing carries on underneath it -- the picture building WHILE you talk is
+  // the entire point. Giving `say` a slot as long as its audio turned a lesson
+  // into a slideshow: ink in silence, then a frozen board with a voice over it.
+  const SAY_LEAD = 340;    // the voice starts a beat before the ink moves
+  const VOICE_GAP = 160;   // breath between two lines, so they never overlap
+
+  /** The line this op speaks, if any. `say` carries it; gestures carry a note. */
+  const spokenText = (op) => (op.cmd === "say" ? op.s : op.note) || "";
+
+  /** How long the voice is busy with this op: real audio when we know it. */
+  function speechMs(op) {
+    const text = spokenText(op);
+    if (!text) return 0;
     return op.audioMs ? op.audioMs + 260 : estimate(text.length);
   }
 
@@ -705,16 +731,16 @@
       case "arrow":  return 520;
       case "text":   return Math.max(320, op.s.length * 42);
       case "stroke": return Math.max(260, (op.pts.length - 1) * 170);
-      case "say":    return spokenOp(op, op.s);
-      // A gesture carrying a note has to stay on screen long enough to say it,
-      // or the next line cuts the voice off mid-sentence.
-      case "highlight": return op.note ? Math.max(820, spokenOp(op, op.note)) : 820;
+      // Just the lead-in. The line keeps being spoken over whatever is drawn
+      // next; layout() is what stops two lines from overlapping.
+      case "say":    return SAY_LEAD;
+      case "highlight": return 820;
       case "ellipse":return 780;
       case "pen":    return 1;      // state change, effectively instant
       case "icon":    return 820;
       case "connect": return op.label ? 640 : 520;
       case "fill":    return 420;
-      case "strike":  return op.note ? Math.max(560, spokenOp(op, op.note)) : 560;
+      case "strike":  return 560;
       case "group":   return 760;
       case "note":    return 700;
       case "brace":   return 520;
@@ -722,8 +748,8 @@
       case "pan":     return 900;    // the camera glides, it does not cut
       case "board":  return 1;      // stage setting, not a stroke
       case "page":   return 900;
-      case "circle": return op.note ? Math.max(780, spokenOp(op, op.note)) : 780;
-      case "erase":  return op.note ? Math.max(430, spokenOp(op, op.note)) : 430;
+      case "circle": return 780;
+      case "erase":  return 430;
       default:       return 200;
     }
   }
@@ -733,10 +759,40 @@
   const starts = [];
   let total = 0;
 
+  /** Place every op on the clock, and every spoken line beside it.
+   *
+   *  Drawing and narration run on one timeline but not in one queue: the ink
+   *  advances continuously, and a line is spoken across however many ops it
+   *  takes. The one hard constraint is the voice -- you cannot talk over
+   *  yourself -- so a line that would start while the previous one is still
+   *  running holds the drawing until the speaker is free.
+   */
+  function layout() {
+    let cursor = 0, voiceFree = 0;
+    starts.length = ops.length;
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      const ms = speechMs(op);
+      if (ms) {
+        cursor = Math.max(cursor, voiceFree);   // wait for the speaker, nothing else
+        op.speakAt = cursor;
+        op.speakUntil = cursor + ms;
+        voiceFree = op.speakUntil + VOICE_GAP;
+      } else {
+        op.speakAt = op.speakUntil = 0;
+      }
+      starts[i] = cursor;
+      cursor += duration(op);
+    }
+    // The last line has to be allowed to finish after the ink stops.
+    total = Math.max(cursor, voiceFree ? voiceFree - VOICE_GAP : 0);
+  }
+
   function appendOps(src) {
     const fresh = parse(src);
-    for (const op of fresh) { starts.push(total); total += duration(op); ops.push(op); }
+    for (const op of fresh) ops.push(op);
     if (fresh.length) {
+      layout();
       renderLog();
       idleSince = null;
       thinkingEl.classList.remove("on");
@@ -787,8 +843,7 @@
       curFrac = oldDur > 0 ? Math.min(1, (time - starts[i]) / oldDur) : 1;
     }
 
-    total = 0;
-    for (let i = 0; i < ops.length; i++) { starts[i] = total; total += duration(ops[i]); }
+    layout();
 
     if (atHead) time = total;
     else if (curIdx >= 0) time = starts[curIdx] + curFrac * duration(ops[curIdx]);
@@ -813,6 +868,60 @@
     return y;
   }
 
+  /** Burn the spoken line into the frame, for recording only.
+   *
+   *  captureStream() takes the canvas and nothing else, so the narration strip
+   *  below the board never reaches the video. Social feeds autoplay muted, so
+   *  a recording without on-screen text is a silent cartoon.
+   */
+  function drawCaptionOverlay(text) {
+    if (!text) return;
+    const pad = 26, fontSize = 30, lineH = 40;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = `400 ${fontSize}px "Source Serif 4", Georgia, serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Wrap to the board width before deciding how tall the band is.
+    const maxW = W - pad * 6;
+    const lines = [];
+    let cur = "";
+    for (const word of text.split(/\s+/)) {
+      const trial = cur ? `${cur} ${word}` : word;
+      if (ctx.measureText(trial).width <= maxW || !cur) cur = trial;
+      else { lines.push(cur); cur = word; }
+    }
+    if (cur) lines.push(cur);
+
+    const bandH = lines.length * lineH + pad;
+    const top = H - bandH - pad;
+    const boxW = Math.min(
+      maxW + pad * 2,
+      Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2,
+    );
+
+    ctx.fillStyle = "rgba(20, 22, 26, 0.84)";
+    roundRect(W / 2 - boxW / 2, top, boxW, bandH, 18);
+    ctx.fill();
+
+    ctx.fillStyle = "#F4F5F7";
+    lines.forEach((line, i) => {
+      ctx.fillText(line, W / 2, top + pad / 2 + lineH / 2 + i * lineH);
+    });
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
   // --- render ---------------------------------------------------------------
   function renderAt(time) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -823,7 +932,6 @@
     solids = [];
     labelled = new Map();
 
-    let speaking = null;   // { text, idx, gesture }
     for (let i = 0; i < ops.length; i++) {
       const op = ops[i], d = duration(op);
       const t = Math.max(0, Math.min(1, (time - starts[i]) / d));
@@ -869,7 +977,6 @@
             }
             polyline(pts, t, 3, ACCENT);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
         case "pen": pen = PENS[op.name] || PEN; break;
@@ -922,7 +1029,6 @@
             polyline([[box[0]-pad, box[1]-pad], [box[2]+pad, box[3]+pad]], t, 4, ACCENT);
             polyline([[box[0]-pad, box[3]+pad], [box[2]+pad, box[1]-pad]], t, 4, ACCENT);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
 
@@ -995,7 +1101,6 @@
             pts.push([op.x + op.r * Math.cos(th) * 1.12, op.y + op.r * Math.sin(th) * 0.9]);
           }
           polyline(pts, t, 3, ACCENT);
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
         case "erase": {
@@ -1008,35 +1113,28 @@
             ctx.fillStyle = "rgba(120,130,145,.18)";
             ctx.fillRect(x0 + (x1 - x0) * t - 16, y0, 16, y1 - y0);
           }
-          if (op.note && t < 1) speaking = { text: op.note, idx: i, gesture: true };
           break;
         }
-        case "say": if (t < 1) speaking = { text: op.s, idx: i, gesture: false }; break;
       }
     }
-    return speaking;
   }
 
-  /** The next line that will be spoken after op `idx`, for prefetching. */
-  function nextSpoken(idx) {
-    for (let i = idx + 1; i < ops.length; i++) {
-      const o = ops[i];
-      if (o.cmd === "say") return { text: o.s, op: o };
-      if (o.note) return { text: o.note, op: o };
+  /** The line being spoken at `t`, or null.
+   *
+   *  The window belongs to the audio, not to the drawing: the voice carries on
+   *  over the ops that follow, so this cannot be read off whichever op is
+   *  currently being inked. layout() keeps the windows from overlapping, so at
+   *  most one matches.
+   */
+  function spokenAt(t) {
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      if (op.speakAt > t) break;
+      if (op.speakUntil > t) {
+        return { text: spokenText(op), idx: i, gesture: op.cmd !== "say" };
+      }
     }
     return null;
-  }
-
-  // --- last spoken line, for when playback sits between `say` ops -----------
-  function lastSaid(time) {
-    let said = null;
-    for (let i = 0; i < ops.length; i++) {
-      if (starts[i] > time) break;
-      const o = ops[i];
-      if (o.cmd === "say") said = o.s;
-      else if (o.note) said = o.note;
-    }
-    return said;
   }
 
   // --- op log ---------------------------------------------------------------
@@ -1145,6 +1243,7 @@
         this._browser(text, rate);
       };
       el.addEventListener("error", fallback);
+      recorder.tap(el);          // route into the recording, if one is running
       el.play().catch(fallback);
       this.audio = el;
     },
@@ -1159,8 +1258,8 @@
       if (this.engine === "browser") return;
       let found = 0;
       for (let i = 0; i < ops.length && found < count; i++) {
-        if (starts[i] + duration(ops[i]) < t) continue;
-        const text = ops[i].cmd === "say" ? ops[i].s : ops[i].note;
+        if ((ops[i].speakUntil || starts[i] + duration(ops[i])) < t) continue;
+        const text = spokenText(ops[i]);
         if (!text) continue;
         this.prefetch(text, ops[i]);
         found++;
@@ -1232,12 +1331,17 @@
   };
 
   function paint() {
-    const speaking = renderAt(time);
+    renderAt(time);
+    const speaking = spokenAt(time);
     // Only voice during playback -- scrubbing a paused timeline shouldn't talk.
     if (speaking && playing) {
       speech.say(speaking.text, speaking.idx, speed, ops[speaking.idx]);
       speech.warmFrom(time, 2);
     }
+
+    // Only the recording gets a burned-in caption; on screen the strip below
+    // the board does the job without covering the drawing.
+    if (recorder.active) drawCaptionOverlay(speaking ? speaking.text : "");
 
     // The subtitle shows only while a line is actually being spoken.
     if (speaking) { thinkingEl.classList.remove("on"); idleSince = null; }
@@ -1257,7 +1361,13 @@
     const dt = Math.min(100, now - last); last = now;
     time += dt * speed;
     // At the live head we idle rather than stop -- more ops may still arrive.
-    if (time >= total) { time = total; playing = false; playBtn.textContent = "Play"; speech.stop(); }
+    if (time >= total) {
+      time = total; playing = false; playBtn.textContent = "Play"; speech.stop();
+      if (recorder.active) {
+        // Let the last syllable and the final frame land before cutting.
+        setTimeout(() => { recorder.stop(); recUI(false); }, 1200);
+      }
+    }
     paint();
     if (playing) pump();
   }
@@ -1308,13 +1418,17 @@
     if (on) { time = total; paint(); }
   }
   followBtn.addEventListener("click", () => setFollowing(!following));
+  function setSpeed(v) {
+    speed = v;
+    document.querySelectorAll(".speed button").forEach(b =>
+      b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === v)));
+    speech.stop();     // re-speaks the current line at the new rate
+    paint();
+  }
   document.querySelectorAll(".speed button").forEach(btn => {
     btn.addEventListener("click", () => {
-      speed = Number(btn.dataset.speed);
-      document.querySelectorAll(".speed button").forEach(b =>
-        b.setAttribute("aria-pressed", String(b === btn)));
-      speech.stop();   // re-speaks the current line at the new rate
-      paint();
+      if (recorder.active) return;   // a recording must stay at real speed
+      setSpeed(Number(btn.dataset.speed));
     });
   });
 
@@ -1368,6 +1482,63 @@
     if (open) { lastActive = -1; syncLog(time); }
   });
 
+  // --- record transport ------------------------------------------------------
+  const recBtn = document.getElementById("record");
+  const recLabel = document.getElementById("recLabel");
+  let recTimer = null;
+
+  function recUI(on) {
+    recBtn.setAttribute("aria-pressed", String(on));
+    recLabel.textContent = on ? "Stop 0:00" : "Record";
+    clearInterval(recTimer);
+    if (on) {
+      recTimer = setInterval(() => {
+        const sec = Math.floor((performance.now() - recorder.startedAt) / 1000);
+        recLabel.textContent = `Stop ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+      }, 500);
+    }
+  }
+
+  async function toggleRecord() {
+    if (recorder.active) { recorder.stop(); recUI(false); return; }
+
+    const problem = await recorder.start();
+    if (problem) { recLabel.textContent = "Record"; recBtn.title = problem; alert_(problem); return; }
+
+    // A recording is a performance: from the top, at real speed, no catching up.
+    saveBtn.hidden = true;
+    recorder.blob = null;
+    recUI(true);
+    gated = false; gateEl.hidden = true; hasPlayed = true;
+    setFollowing(false);
+    setSpeed(1);
+    time = 0;
+    speech.stop();
+    paint();
+    setPlaying(true);
+  }
+
+  /** Surface a problem without a modal -- alerts freeze the automation. */
+  function alert_(msg) {
+    capText.textContent = msg;
+    capEl.classList.add("on");
+    setTimeout(() => capEl.classList.remove("on"), 6000);
+  }
+
+  recBtn.addEventListener("click", toggleRecord);
+
+  const saveBtn = document.getElementById("saveVideo");
+  function onRecordingReady(bytes, ext) {
+    const mb = (bytes / 1_048_576).toFixed(1);
+    saveBtn.textContent = `Save ${ext.toUpperCase()} (${mb} MB)`;
+    saveBtn.hidden = bytes === 0;
+    if (!bytes) alert_("The recording came out empty. Try again from the start.");
+  }
+  saveBtn.addEventListener("click", () => {
+    recorder.download();
+    saveBtn.hidden = true;
+  });
+
   const stageEl = document.querySelector(".stage");
   const fsBtn = document.getElementById("fullscreen");
   function toggleFullscreen() {
@@ -1391,6 +1562,114 @@
       else paint();
     });
   }
+
+  // --- recording -------------------------------------------------------------
+  // The canvas gives a video track directly. Audio is harder: speechSynthesis
+  // exposes no stream and cannot be captured at all, so a recording made with
+  // the browser voice would be silent. ElevenLabs narration arrives as same
+  // origin <audio>, which Web Audio can tap -- hence the requirement.
+  const recorder = {
+    rec: null,
+    chunks: [],
+    ctx: null,
+    dest: null,
+    tapped: new WeakSet(),
+    startedAt: 0,
+
+    /** Best container this browser can actually mux. */
+    mime() {
+      const want = [
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",   // shareable anywhere
+        "video/mp4",
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ];
+      return want.find((m) => MediaRecorder.isTypeSupported?.(m)) || "";
+    },
+
+    get active() {
+      return !!this.rec && this.rec.state === "recording";
+    },
+
+    ensureGraph() {
+      if (this.ctx) return;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new Ctx();
+      this.dest = this.ctx.createMediaStreamDestination();
+    },
+
+    /** Route one narration clip to the speakers AND into the recording.
+     *  createMediaElementSource detaches the element from default output, so
+     *  it has to be reconnected or the lesson plays silently. */
+    tap(el) {
+      if (!this.ctx || this.tapped.has(el)) return;
+      try {
+        const src = this.ctx.createMediaElementSource(el);
+        src.connect(this.ctx.destination);
+        src.connect(this.dest);
+        this.tapped.add(el);
+      } catch {
+        /* already tapped, or not same-origin: it still plays, just unrecorded */
+      }
+    },
+
+    async start() {
+      const type = this.mime();
+      if (!window.MediaRecorder || !type) {
+        return "This browser cannot record video.";
+      }
+      if (speech.engine === "browser") {
+        return "Pick an ElevenLabs voice first -- browser speech cannot be recorded, "
+             + "and the video would have no sound.";
+      }
+
+      this.ensureGraph();
+      await this.ctx.resume().catch(() => {});
+
+      const stream = new MediaStream([
+        ...cv.captureStream(30).getVideoTracks(),
+        ...this.dest.stream.getAudioTracks(),
+      ]);
+      this.chunks = [];
+      this.rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 4_000_000 });
+      this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
+      this.rec.onstop = () => this.finish(type);
+      this.rec.start(1000);
+      this.startedAt = performance.now();
+      return null;
+    },
+
+    stop() {
+      if (this.active) this.rec.stop();
+    },
+
+    /** Hold the finished file. Downloading it needs a real click.
+     *
+     *  Recording stops on a timer once the lesson ends, which is far from any
+     *  user gesture -- a programmatic a.click() there is simply ignored, so
+     *  the file vanished silently. The save button is the gesture. */
+    finish(type) {
+      this.blob = new Blob(this.chunks, { type });
+      this.ext = type.startsWith("video/mp4") ? "mp4" : "webm";
+      this.chunks = [];
+      onRecordingReady(this.blob.size, this.ext);
+    },
+
+    download() {
+      if (!this.blob) return;
+      const name = (topicEl.textContent || "scribe-lesson")
+        .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "scribe-lesson";
+      const url = URL.createObjectURL(this.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}.${this.ext}`;
+      document.body.appendChild(a);     // Firefox ignores a detached anchor
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    },
+  };
 
   // --- autoplay gate ---------------------------------------------------------
   const gateEl = document.getElementById("gate");
