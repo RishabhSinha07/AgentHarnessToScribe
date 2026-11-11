@@ -1,0 +1,28 @@
+# The share image. Drawn by Scribe, which is the point of it.
+#   uv run python -c "from pathlib import Path; from scribe.canvas import Canvas; \
+#     c=Canvas(); c.run(Path('docs/social.ops').read_text()); c.render(Path('docs/social.png'))"
+board 64 30
+
+say "Everyone adds a retry. Almost nobody multiplies them."
+text 3,2 "Retries compound: one click, 27 queries"
+
+icon user 7,10 5 "client"
+icon server 21,10 5 "gateway"
+icon server 35,10 5 "service"
+icon db 50,10 6 "postgres"
+connect "client" "gateway" "retry x3"
+connect "gateway" "service" "retry x3"
+connect "service" "postgres" "retry x3"
+
+text 5,16.5 "1 request"
+text 20,16.5 "3"
+text 34,16.5 "9"
+text 47,16.5 "27 queries"
+
+highlight "postgres" "Twenty-seven queries for one click -- on a database that was already failing."
+
+box 6,20.5 20,3 "retry at every layer"
+strike "retry at every layer" "This is the instinct, and it is the bug."
+arrow 27,22 32,22
+box 33,20.5 23,3 "retry once, with jitter"
+note 6,25.5 30 "Under load, the retries ARE the load. That box was drawn on purpose, then retired."
